@@ -1,0 +1,32 @@
+{
+    "manifest_version": 3,
+    "name": "Alias Bridge",
+    "version": "1.0.0",
+    "description": "Generate privacy-focused email aliases on the fly.",
+    "action": {
+        "default_popup": "index.html"
+    },
+    "background": {
+        "service_worker": "src/background.ts",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "src/content.ts"
+            ]
+        }
+    ],
+    "permissions": [
+        "storage",
+        "activeTab",
+        "scripting",
+        "clipboardWrite"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ]
+}
