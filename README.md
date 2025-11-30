@@ -45,12 +45,7 @@ npm install
 npm run dev
 ```
 
-### Backend (License Verification)
-```bash
-cd backend
-npm install
-npm run dev
-```
+
 
 ## License
 

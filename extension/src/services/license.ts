@@ -5,31 +5,72 @@ export interface LicenseResponse {
     error?: string;
 }
 
-// In production, this should point to your deployed worker URL
-// For local dev, we might need to point to localhost:8787 but Chrome Extensions have trouble with http/localhost sometimes due to CSP.
-// We will assume the user runs the backend locally on 8787 for now.
-const API_URL = 'http://localhost:8787';
+const POLAR_API_URL = 'https://api.polar.sh/v1/customer-portal/license-keys/activate';
+const ORGANIZATION_ID = '5a0be606-78d9-4119-a7c7-1c8bc12b07ea'; // TODO: Replace with your Polar Organization ID
 
 export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
-    // Dev bypass for testing
-    if (key === 'TEST_PRO') {
-        return { valid: true, plan: 'pro' };
-    }
+
 
     try {
-        const response = await fetch(`${API_URL}/verify`, {
+        // Get or create a unique instance ID for this extension installation
+        let instanceId = await new Promise<string>((resolve) => {
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.get(['instanceId'], (result) => {
+                    if (result.instanceId) {
+                        resolve(result.instanceId as string);
+                    } else {
+                        const newId = crypto.randomUUID();
+                        chrome.storage.local.set({ instanceId: newId });
+                        resolve(newId);
+                    }
+                });
+            } else {
+                // Fallback for dev/browser env without extension context
+                let id = localStorage.getItem('instanceId');
+                if (!id) {
+                    id = crypto.randomUUID();
+                    localStorage.setItem('instanceId', id);
+                }
+                resolve(id);
+            }
+        });
+
+        const response = await fetch(POLAR_API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ licenseKey: key }),
+            body: JSON.stringify({
+                key: key,
+                organization_id: ORGANIZATION_ID,
+                label: `extension-${instanceId}`
+            }),
         });
 
         if (!response.ok) {
-            throw new Error('Network response was not ok');
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Polar API Error:', response.status, JSON.stringify(errorData));
+
+            if (response.status === 404) {
+                return { valid: false, error: 'License key not found' };
+            }
+            if (response.status === 403) {
+                // Return the specific detail from Polar if available (e.g. "NotPermitted")
+                return { valid: false, error: errorData.detail || 'Activation limit reached or not supported' };
+            }
+
+            return { valid: false, error: errorData.detail || errorData.error || 'Verification failed' };
         }
 
-        return await response.json();
+        const data = await response.json();
+
+        // If we get a valid response with a license_key object, it's valid
+        if (data && data.license_key) {
+            return { valid: true, plan: 'pro' };
+        }
+
+        return { valid: false, error: 'Invalid license' };
+
     } catch (error) {
         console.error('License verification failed:', error);
         return { valid: false, error: 'Verification failed' };

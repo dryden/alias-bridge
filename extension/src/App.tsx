@@ -1,28 +1,39 @@
 import { useState, useEffect } from 'react'
 import { Button } from './components/ui/button'
-import { Label } from './components/ui/label'
-import { Switch } from './components/ui/switch'
-import { getDomainFromUrl, generateUUIDAlias, generateRandomAlias, generateDomainAlias } from './lib/domain'
-import { Shield, Settings, RefreshCw, Link as LinkIcon, Star } from 'lucide-react'
+
+import { getDomainFromUrl } from './lib/domain'
+import { generateAlias as generateAliasString, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/aliasGenerator'
+import { Shield, Settings, RefreshCw, Link as LinkIcon, Star, Crown } from 'lucide-react'
 import { cn } from './lib/utils'
+
+
+
 
 function App() {
   // Data State
   const [userData, setUserData] = useState<any>(null)
+  const [hasToken, setHasToken] = useState(false)
   const [currentUrl, setCurrentUrl] = useState('')
   const [generatedAlias, setGeneratedAlias] = useState('')
   const [activeTab, setActiveTab] = useState('uuid')
   const [autoCopy, setAutoCopy] = useState(true)
+  const [customRule, setCustomRule] = useState<CustomRule>(DEFAULT_CUSTOM_RULE)
+  const [defaultDomain, setDefaultDomain] = useState('anonaddy.com')
 
   // License State
   const [isPro, setIsPro] = useState(false)
 
+
+
   // Load initial state
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['addyToken', 'userData', 'licenseKey', 'isPro', 'autoCopy'], (result) => {
+      chrome.storage.local.get(['addyToken', 'userData', 'licenseKey', 'isPro', 'autoCopy', 'customRule', 'defaultFormat', 'defaultDomain'], (result) => {
         if (result.addyToken) {
+          setHasToken(true)
           if (result.userData) setUserData(result.userData)
+        } else {
+          setHasToken(false)
         }
         // Removed auto-open settings logic
 
@@ -32,6 +43,18 @@ function App() {
 
         if (result.autoCopy !== undefined) {
           setAutoCopy(!!result.autoCopy)
+        }
+
+        if (result.defaultFormat) {
+          setActiveTab(result.defaultFormat as string)
+        }
+
+        if (result.customRule) {
+          setCustomRule(result.customRule as CustomRule)
+        }
+
+        if (result.defaultDomain) {
+          setDefaultDomain(result.defaultDomain as string)
         }
       })
 
@@ -45,6 +68,7 @@ function App() {
       // Dev mode fallback
       const saved = localStorage.getItem('addyToken')
       if (saved) {
+        setHasToken(true)
         setUserData({ username: 'dev_user' })
       }
 
@@ -56,7 +80,7 @@ function App() {
   // Generate alias when tab or url changes
   useEffect(() => {
     generateAlias()
-  }, [activeTab, currentUrl, userData])
+  }, [activeTab, currentUrl, userData, customRule])
 
   // Save autoCopy preference
   useEffect(() => {
@@ -68,23 +92,19 @@ function App() {
   const generateAlias = () => {
     if (!userData) return
 
-    const domain = 'anonaddy.com' // Should come from user settings/data
-    let alias = ''
+    // const domain = 'anonaddy.com' // Removed hardcoded domain
+    // Note: In a real scenario, we should use the selected default domain from settings if available.
+    // However, the current App.tsx doesn't load defaultDomain. Let's assume 'anonaddy.com' for now or update to load it.
 
-    switch (activeTab) {
-      case 'uuid':
-        alias = generateUUIDAlias(domain)
-        break
-      case 'random':
-        alias = generateRandomAlias(domain)
-        break
-      case 'domain':
-        alias = generateDomainAlias(currentUrl, userData.username, domain)
-        break
-      case 'custom':
-        alias = `custom.${getDomainFromUrl(currentUrl)}@${userData.username}.${domain}`
-        break
-    }
+    // Let's use the shared generator
+    const alias = generateAliasString({
+      type: activeTab,
+      domain: defaultDomain,
+      username: userData.username,
+      currentUrl: currentUrl,
+      customRule: customRule
+    })
+
     setGeneratedAlias(alias)
   }
 
@@ -98,11 +118,28 @@ function App() {
           chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: (email) => {
-              const activeElement = document.activeElement as HTMLInputElement;
+              // Try to find the active element first
+              let activeElement = document.activeElement as HTMLInputElement;
+
+              // If active element is body or not an input, try to find the first email input
+              if (!activeElement || activeElement === document.body || (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA')) {
+                const emailInput = document.querySelector('input[type="email"]');
+                if (emailInput) {
+                  activeElement = emailInput as HTMLInputElement;
+                } else {
+                  // Fallback to any visible input
+                  const firstInput = document.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"])');
+                  if (firstInput) {
+                    activeElement = firstInput as HTMLInputElement;
+                  }
+                }
+              }
+
               if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
                 activeElement.value = email;
                 activeElement.dispatchEvent(new Event('input', { bubbles: true }));
                 activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+                activeElement.focus();
               }
             },
             args: [generatedAlias]
@@ -131,18 +168,51 @@ function App() {
   }
 
   // Main View
-  return (
-    <div className="w-[350px] bg-slate-950 min-h-[500px] p-5 flex flex-col font-sans text-slate-100">
-      {/* Header */}
-      <div className="flex items-center justify-center relative mb-8 mt-2">
-        <div className="absolute left-0">
-          <Shield className="w-6 h-6 text-slate-400" />
+  if (!hasToken) {
+    return (
+      <div className="w-[350px] bg-slate-950 min-h-[500px] p-5 flex flex-col font-sans text-slate-100">
+        <div className="flex items-center justify-center relative mb-8 mt-2">
+          <div className="absolute left-0">
+            <Shield className="w-6 h-6 text-slate-400" />
+          </div>
+          <h1 className="text-lg font-bold tracking-tight">Alias Bridge</h1>
         </div>
-        <h1 className="text-lg font-bold tracking-tight">Alias Bridge</h1>
+
+        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
+          <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center">
+            <Settings className="w-8 h-8 text-blue-500" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-slate-200">Setup Required</h2>
+            <p className="text-sm text-slate-400 max-w-[250px]">
+              Please configure your Addy.io API key in settings to start generating aliases.
+            </p>
+          </div>
+          <Button
+            onClick={openSettings}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white"
+          >
+            Open Settings
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-[350px] bg-slate-950 min-h-[500px] flex flex-col font-sans text-slate-100">
+      {/* Header */}
+      <div className="h-14 flex items-center justify-center relative border-b border-slate-800/50">
+        <div className="flex items-center gap-2">
+          <img src="icon.ico" className="w-5 h-5" alt="Logo" />
+          <h1 className="text-base font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+            Alias Bridge
+          </h1>
+        </div>
       </div>
 
       {/* Main Card */}
-      <div className="bg-slate-900 rounded-2xl p-4 shadow-lg border border-slate-800/50 mb-6">
+      <div className="bg-slate-900 rounded-2xl p-4 shadow-lg border border-slate-800/50 mb-6 mx-5 mt-5">
         {/* Tabs */}
         <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
           {['uuid', 'random', 'domain', 'custom'].map((tab) => (
@@ -156,7 +226,7 @@ function App() {
                   : "text-slate-500 hover:text-slate-300"
               )}
             >
-              {tab}
+              {tab === 'uuid' ? 'UUID' : tab}
               {/* Lock icon for pro features */}
               {['domain', 'custom'].includes(tab) && !isPro && (
                 <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500/50 rounded-full"></span>
@@ -167,9 +237,9 @@ function App() {
 
         {/* Domain Badge */}
         <div className="mb-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-950/30 border border-blue-900/30 text-blue-400 text-xs font-medium">
-            <LinkIcon className="w-3 h-3" />
-            <span>For {getDomainFromUrl(currentUrl) || 'current page'}</span>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-950/30 border border-blue-900/30 text-blue-400 text-xs font-medium max-w-full">
+            <LinkIcon className="w-3 h-3 shrink-0" />
+            <span className="truncate">For {getDomainFromUrl(currentUrl) || 'current page'}</span>
           </div>
         </div>
 
@@ -179,11 +249,11 @@ function App() {
           <div className="relative group">
             <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
             <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
-              <input
-                type="text"
+              <textarea
                 value={generatedAlias}
                 readOnly
-                className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-sm font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600"
+                rows={3}
+                className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
               />
               <button
                 onClick={generateAlias}
@@ -197,7 +267,7 @@ function App() {
       </div>
 
       {/* Action Buttons */}
-      <div className="space-y-3 mt-auto mb-8">
+      <div className="space-y-3 mt-auto mb-2 px-5">
         <Button
           className="w-full bg-blue-600 hover:bg-blue-500 text-white h-12 rounded-xl text-sm font-semibold shadow-lg shadow-blue-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
           onClick={handleCopyAndFill}
@@ -214,24 +284,21 @@ function App() {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between text-slate-500 mt-auto pt-4">
-        <div className="flex items-center space-x-2">
-          <Switch id="auto-copy" checked={autoCopy} onCheckedChange={setAutoCopy} className="data-[state=checked]:bg-blue-600" />
-          <Label htmlFor="auto-copy" className="text-xs text-slate-400">Auto-copy</Label>
-        </div>
+      <div className="flex items-center justify-between text-slate-500 mt-auto pt-2 px-5 pb-3">
+        <button
+          onClick={openSettings}
+          className="p-2 hover:text-white transition-colors rounded-lg hover:bg-slate-900"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={openSettings}
-            className="p-2 hover:text-white transition-colors rounded-lg hover:bg-slate-900"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
-
-          <div className="flex items-center gap-2 text-xs font-medium text-amber-500/80">
+        <div className="flex items-center gap-2 text-xs font-medium text-amber-500/80">
+          {isPro ? (
+            <Crown className="w-3.5 h-3.5 fill-amber-500/20 text-amber-500" />
+          ) : (
             <Star className="w-3.5 h-3.5 fill-amber-500/20" />
-            <span>v1.2.0</span>
-          </div>
+          )}
+          <span>v{typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : '1.0.0'}</span>
         </div>
       </div>
     </div>

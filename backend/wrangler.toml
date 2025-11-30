@@ -1,7 +1,0 @@
-name = "alias-bridge-backend"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
-
-[vars]
-# POLAR_ACCESS_TOKEN = "your_polar_access_token"
-# POLAR_ORGANIZATION_ID = "your_polar_org_id"

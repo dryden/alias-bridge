@@ -64,8 +64,8 @@ export const getDomains = async (token: string): Promise<string[]> => {
         // 5. Construct the full list
         let fullList: string[] = [];
 
-        // Add Shared Domains (Root)
-        fullList.push(...sharedDomains);
+        // Add Shared Domains (Root) - REMOVED as per user request to filter out non-subdomain options
+        // fullList.push(...sharedDomains);
 
         // Add User Subdomains (username.shareddomain)
         for (const username of allUsernames) {

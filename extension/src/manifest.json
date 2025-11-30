@@ -4,8 +4,31 @@
     "version": "1.0.0",
     "description": "Generate privacy-focused email aliases on the fly.",
     "action": {
-        "default_popup": "index.html"
+        "default_popup": "index.html",
+        "default_icon": {
+            "16": "icon-16.png",
+            "48": "icon-48.png",
+            "128": "icon-128.png"
+        }
     },
+    "icons": {
+        "16": "icon-16.png",
+        "48": "icon-48.png",
+        "128": "icon-128.png"
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "icon-16.png",
+                "icon-48.png",
+                "icon-128.png",
+                "icon.png"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ],
     "options_page": "settings.html",
     "background": {
         "service_worker": "src/background.ts",
@@ -25,9 +48,11 @@
         "storage",
         "activeTab",
         "scripting",
-        "clipboardWrite"
+        "clipboardWrite",
+        "contextMenus"
     ],
     "host_permissions": [
-        "<all_urls>"
+        "<all_urls>",
+        "https://api.polar.sh/*"
     ]
 }

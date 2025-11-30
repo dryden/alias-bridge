@@ -1,4 +1,4 @@
-import { getDomainFromUrl } from './lib/domain';
+import { generateAlias, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/aliasGenerator';
 
 console.log("Alias Bridge content script loaded");
 
@@ -33,12 +33,9 @@ function injectIcon(input: HTMLInputElement) {
     iconContainer.style.borderRadius = '4px';
     iconContainer.title = 'Generate Alias';
 
-    // Simple SVG Icon
-    iconContainer.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-    </svg>
-  `;
+    // Custom Logo
+    const logoUrl = chrome.runtime.getURL('icon-16.png');
+    iconContainer.innerHTML = `<img src="${logoUrl}" style="width: 14px; height: 14px; display: block;" />`;
 
     // We need a way to position this correctly. 
     // A common technique is to wrap the input, but that's invasive.
@@ -65,29 +62,44 @@ function injectIcon(input: HTMLInputElement) {
             e.preventDefault();
             e.stopPropagation();
 
-            // Generate alias (Mock for now, or fetch from storage settings)
-            // In real app, we might want to open a mini popup or just fill immediately
-            const domain = getDomainFromUrl(window.location.href);
-            const random = Math.random().toString(36).substring(2, 8);
-            const alias = `alias.${domain}.${random}@anonaddy.com`;
+            // Fetch settings
+            chrome.storage.local.get(['userData', 'defaultFormat', 'customRule', 'defaultDomain'], async (result) => {
+                const userData = result.userData;
+                const defaultFormat = result.defaultFormat || 'uuid';
+                const customRule = result.customRule ? (result.customRule as CustomRule) : DEFAULT_CUSTOM_RULE;
+                const defaultDomain = result.defaultDomain || 'anonaddy.com';
 
-            // Fill input
-            input.value = alias;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+                if (!userData) {
+                    console.error('User data not found');
+                    return;
+                }
 
-            // Copy to clipboard
-            try {
-                await navigator.clipboard.writeText(alias);
-                // Show feedback
-                const originalBg = iconContainer.style.backgroundColor;
-                iconContainer.style.backgroundColor = '#22c55e'; // Green
-                setTimeout(() => {
-                    iconContainer.style.backgroundColor = originalBg;
-                }, 1000);
-            } catch (err) {
-                console.error('Failed to copy', err);
-            }
+                const alias = generateAlias({
+                    type: defaultFormat as string,
+                    domain: defaultDomain as string,
+                    username: (userData as any).username,
+                    currentUrl: window.location.href,
+                    customRule: customRule
+                });
+
+                // Fill input
+                input.value = alias;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+
+                // Copy to clipboard
+                try {
+                    await navigator.clipboard.writeText(alias);
+                    // Show feedback
+                    const originalBg = iconContainer.style.backgroundColor;
+                    iconContainer.style.backgroundColor = '#22c55e'; // Green
+                    setTimeout(() => {
+                        iconContainer.style.backgroundColor = originalBg;
+                    }, 1000);
+                } catch (err) {
+                    console.error('Failed to copy', err);
+                }
+            });
         });
     }
 }
@@ -109,13 +121,36 @@ const observer = new MutationObserver((mutations) => {
     });
 });
 
-// Initial scan
-document.querySelectorAll('input[type="email"]').forEach((input) => {
-    injectIcon(input as HTMLInputElement);
+// Initial check for API token
+chrome.storage.local.get(['addyToken'], (result) => {
+    if (result.addyToken) {
+        // Initial scan
+        document.querySelectorAll('input[type="email"]').forEach((input) => {
+            injectIcon(input as HTMLInputElement);
+        });
+
+        // Start observing
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
 });
 
-// Start observing
-observer.observe(document.body, {
-    childList: true,
-    subtree: true
+// Listen for messages from background script (Context Menu)
+chrome.runtime.onMessage.addListener((request) => {
+    if (request.action === "insertAlias" && request.alias) {
+        const activeElement = document.activeElement as HTMLInputElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+            // Clear and fill input
+            activeElement.value = request.alias;
+
+            // Trigger events
+            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+            activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+            // Fallback: Copy to clipboard if no active input
+            navigator.clipboard.writeText(request.alias).catch(err => console.error('Failed to copy', err));
+        }
+    }
 });
