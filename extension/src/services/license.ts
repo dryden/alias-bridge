@@ -11,6 +11,11 @@ export interface LicenseResponse {
 const API_URL = 'http://localhost:8787';
 
 export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
+    // Dev bypass for testing
+    if (key === 'TEST_PRO') {
+        return { valid: true, plan: 'pro' };
+    }
+
     try {
         const response = await fetch(`${API_URL}/verify`, {
             method: 'POST',
