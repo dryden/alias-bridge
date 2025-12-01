@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Button } from './components/ui/button'
 
-import { getDomainFromUrl } from './lib/domain'
+
 import { generateAlias as generateAliasString, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/aliasGenerator'
-import { Shield, Settings, RefreshCw, Link as LinkIcon, Star, Crown } from 'lucide-react'
+import { Shield, Settings, RefreshCw, Star, Crown } from 'lucide-react'
 import { cn } from './lib/utils'
 
 
@@ -236,12 +236,7 @@ function App() {
         </div>
 
         {/* Domain Badge */}
-        <div className="mb-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-950/30 border border-blue-900/30 text-blue-400 text-xs font-medium max-w-full">
-            <LinkIcon className="w-3 h-3 shrink-0" />
-            <span className="truncate">For {getDomainFromUrl(currentUrl) || 'current page'}</span>
-          </div>
-        </div>
+
 
         {/* Generated Alias Input */}
         <div className="space-y-2 mb-2">
