@@ -94,9 +94,12 @@ export const getDomainDetails = async (token: string, domain: string): Promise<A
 
                     if (usernameData) {
                         console.log('[Addy] Found username:', { username: usernameData.username, catch_all: usernameData.catch_all });
+                        // Important: preserve false values - use undefined check instead of nullish coalescing
+                        const catchAll = typeof usernameData.catch_all === 'boolean' ? usernameData.catch_all : true;
+                        console.log('[Addy] Username catch_all status (after type check):', catchAll);
                         return {
                             domain,
-                            catch_all: usernameData.catch_all ?? true,
+                            catch_all: catchAll,
                             ...usernameData
                         };
                     }
