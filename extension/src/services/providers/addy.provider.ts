@@ -44,22 +44,22 @@ export class AddyProvider implements AliasProvider {
             const parts = domain.split('.');
             const potentialSharedDomain = parts.length >= 2 ? parts.slice(1).join('.') : null;
 
-            let isDomainWithFlexibleCatchAll = false;
+            let isUsernameOrSharedDomain = false;
 
             // Detect if it's a username domain format
             if (potentialSharedDomain && SHARED_DOMAINS.includes(potentialSharedDomain)) {
                 console.log('[Addy.io] Username domain detected:', domain);
-                isDomainWithFlexibleCatchAll = true;
+                isUsernameOrSharedDomain = true;
             }
 
             // Detect if it's a root shared domain
             if (SHARED_DOMAINS.includes(domain)) {
                 console.log('[Addy.io] Root shared domain detected:', domain);
-                isDomainWithFlexibleCatchAll = true;
+                isUsernameOrSharedDomain = true;
             }
 
             // For these domain types, check actual catch-all status
-            if (isDomainWithFlexibleCatchAll) {
+            if (isUsernameOrSharedDomain) {
                 const domainDetails = await getDomainDetails(token, domain);
                 console.log('[Addy.io] Domain details fetched:', domainDetails);
 
@@ -68,20 +68,23 @@ export class AddyProvider implements AliasProvider {
                     return { success: true, isCatchAllDomain: true };
                 } else {
                     console.log('[Addy.io] Domain has catch-all disabled, API call needed:', domain);
-                    // Continue to API call section below
+                    // Username/shared domains don't need domain ID lookup, proceed directly to API call
                 }
             }
 
-            // For custom domains, verify domain exists and call the API
-            console.log('[Addy.io] Custom domain detected, verifying domain exists...');
-            const domainId = await getDomainId(token, domain);
+            // For custom domains, verify domain exists first
+            let domainId = null;
+            if (!isUsernameOrSharedDomain) {
+                console.log('[Addy.io] Custom domain detected, verifying domain exists...');
+                domainId = await getDomainId(token, domain);
 
-            if (domainId === null) {
-                console.error('[Addy.io] Failed to find domain ID for custom domain:', domain);
-                return {
-                    success: false,
-                    error: `Unable to find domain "${domain}". Please check that this domain is properly configured in your Addy account.`
-                };
+                if (domainId === null) {
+                    console.error('[Addy.io] Failed to find domain ID for custom domain:', domain);
+                    return {
+                        success: false,
+                        error: `Unable to find domain "${domain}". Please check that this domain is properly configured in your Addy account.`
+                    };
+                }
             }
 
             console.log('[Addy.io] Creating alias via API with domain:', domain);
