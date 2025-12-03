@@ -22,10 +22,45 @@ export class AddyProvider implements AliasProvider {
         return `${localPart}@${domain}`;
     }
 
-    async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
+    async createAlias(alias: string, token: string, domain?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
-            console.log('[Addy.io] Creating alias:', alias);
+            console.log('[Addy.io] Creating alias:', { alias, domain });
 
+            // Case 1: Server-side generation (no specific alias provided)
+            // This happens when catch-all is disabled and we want Addy to generate the alias
+            if ((!alias || alias === '(Generating from server...)') && domain) {
+                console.log('[Addy.io] Requesting server-side generation for domain:', domain);
+
+                const response = await fetch('https://app.addy.io/api/v1/aliases', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        domain: domain,
+                        format: 'uuid', // Default to UUID for server-generated aliases
+                        description: 'Created by Alias Bridge'
+                    })
+                });
+
+                const responseData = await response.json();
+                console.log('[Addy.io] Create response:', response.status, responseData);
+
+                if (response.ok) {
+                    const createdAlias = responseData.data?.email || responseData.data?.address;
+                    console.log('[Addy.io] ✓ Server generated alias:', createdAlias);
+                    return { success: true, createdAlias };
+                }
+
+                return {
+                    success: false,
+                    error: `${response.status}: ${responseData.message || 'Unknown error'}`
+                };
+            }
+
+            // Case 2: Custom alias creation (alias provided)
             // Parse the alias
             const atIndex = alias.indexOf('@');
             if (atIndex === -1) {
@@ -33,38 +68,38 @@ export class AddyProvider implements AliasProvider {
             }
 
             const localPart = alias.substring(0, atIndex);
-            const domain = alias.substring(atIndex + 1);
+            const aliasDomain = alias.substring(atIndex + 1);
 
-            console.log('[Addy.io] Parsed -', { localPart, domain });
+            console.log('[Addy.io] Parsed -', { localPart, domain: aliasDomain });
 
             // Check if this is a username domain (e.g., 0309.4wrd.cc) or root shared domain
-            const parts = domain.split('.');
+            const parts = aliasDomain.split('.');
             const potentialSharedDomain = parts.length >= 2 ? parts.slice(1).join('.') : null;
 
             let isUsernameOrSharedDomain = false;
 
             // Detect if it's a username domain format
             if (potentialSharedDomain && SHARED_DOMAINS.includes(potentialSharedDomain)) {
-                console.log('[Addy.io] Username domain detected:', domain);
+                console.log('[Addy.io] Username domain detected:', aliasDomain);
                 isUsernameOrSharedDomain = true;
             }
 
             // Detect if it's a root shared domain
-            if (SHARED_DOMAINS.includes(domain)) {
-                console.log('[Addy.io] Root shared domain detected:', domain);
+            if (SHARED_DOMAINS.includes(aliasDomain)) {
+                console.log('[Addy.io] Root shared domain detected:', aliasDomain);
                 isUsernameOrSharedDomain = true;
             }
 
             // For these domain types, check actual catch-all status
             if (isUsernameOrSharedDomain) {
-                const domainDetails = await getDomainDetails(token, domain);
+                const domainDetails = await getDomainDetails(token, aliasDomain);
                 console.log('[Addy.io] Domain details fetched:', domainDetails);
 
                 if (domainDetails && domainDetails.catch_all === true) {
-                    console.log('[Addy.io] Domain has catch-all enabled, no API call needed:', domain);
+                    console.log('[Addy.io] Domain has catch-all enabled, no API call needed:', aliasDomain);
                     return { success: true, isCatchAllDomain: true };
                 } else {
-                    console.log('[Addy.io] Domain has catch-all disabled, API call needed:', domain);
+                    console.log('[Addy.io] Domain has catch-all disabled, API call needed:', aliasDomain);
                     // Username/shared domains don't need domain ID lookup, proceed directly to API call
                 }
             }
@@ -72,17 +107,17 @@ export class AddyProvider implements AliasProvider {
             // For custom domains, verify domain exists first
             if (!isUsernameOrSharedDomain) {
                 console.log('[Addy.io] Custom domain detected, verifying domain exists...');
-                const domainDetails = await getDomainDetails(token, domain);
+                const domainDetails = await getDomainDetails(token, aliasDomain);
                 if (!domainDetails) {
-                    console.error('[Addy.io] Failed to find domain:', domain);
+                    console.error('[Addy.io] Failed to find domain:', aliasDomain);
                     return {
                         success: false,
-                        error: `Unable to find domain "${domain}". Please check that this domain is properly configured in your Addy account.`
+                        error: `Unable to find domain "${aliasDomain}". Please check that this domain is properly configured in your Addy account.`
                     };
                 }
             }
 
-            console.log('[Addy.io] Creating alias via API with domain:', domain);
+            console.log('[Addy.io] Creating alias via API with domain:', aliasDomain);
 
             // Create alias via Addy API with custom format
             // Using format: "custom" tells Addy to use the exact local_part we specified
@@ -95,7 +130,7 @@ export class AddyProvider implements AliasProvider {
                 },
                 body: JSON.stringify({
                     local_part: localPart,
-                    domain: domain,
+                    domain: aliasDomain,
                     format: 'custom',
                     description: 'Created by Alias Bridge'
                 })

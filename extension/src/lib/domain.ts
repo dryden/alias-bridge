@@ -42,8 +42,16 @@ export function getDomainFromUrl(url: string): string {
     }
 }
 
+function safeUUID(): string {
+    // Pure Math.random fallback to avoid any window/crypto issues in Service Worker
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
 export function generateUUIDAlias(domain: string = 'anonaddy.com'): string {
-    const uuid = crypto.randomUUID();
+    const uuid = safeUUID();
     return `${uuid}@${domain}`;
 }
 

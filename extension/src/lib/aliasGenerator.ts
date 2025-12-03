@@ -24,12 +24,20 @@ export interface AliasGeneratorOptions {
     customRule?: CustomRule;
 }
 
+function safeUUID(): string {
+    // Pure Math.random fallback to avoid any window/crypto issues in Service Worker
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
 export function generateLocalPart(options: Omit<AliasGeneratorOptions, 'domain' | 'username'>): string {
     const { type, currentUrl, customRule = DEFAULT_CUSTOM_RULE } = options;
 
     switch (type) {
         case 'uuid': {
-            return crypto.randomUUID();
+            return safeUUID();
         }
         case 'random': {
             return Math.random().toString(36).substring(2, 10);
@@ -61,7 +69,7 @@ export function generateLocalPart(options: Omit<AliasGeneratorOptions, 'domain' 
                         return isSuffix ? `${sep}${rand}` : `${rand}${sep}`;
                     }
                     case 'uuid': {
-                        const uuid = crypto.randomUUID();
+                        const uuid = safeUUID();
                         return isSuffix ? `${sep}${uuid}` : `${uuid}${sep}`;
                     }
                     case 'text': return text ? (isSuffix ? `${sep}${text}` : `${text}${sep}`) : '';

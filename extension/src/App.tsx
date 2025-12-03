@@ -4,7 +4,7 @@ import { generateLocalPart, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/a
 import { providerService } from './services/providers/provider.service'
 import { providerRegistry } from './services/providers/registry'
 import type { ProviderConfig } from './services/providers/types'
-import { Shield, Settings, RefreshCw, Star, Crown, Copy } from 'lucide-react'
+import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown } from 'lucide-react'
 import { cn } from './lib/utils'
 
 function App() {
@@ -26,6 +26,7 @@ function App() {
   // UI State
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState<string | null>(null)
+  const [isCatchAllEnabled, setIsCatchAllEnabled] = useState<boolean | null>(null)
 
   // Handlers
   const openSettings = () => {
@@ -44,21 +45,45 @@ function App() {
 
     // For Addy, check if domain has catch-all enabled
     // If catch-all is disabled, don't show alias preview (it will be fetched from server)
+    let shouldSkipAliasGeneration = false
+
     if (providerConfig.id === 'addy') {
       try {
         const { getDomainDetails } = await import('./services/addy')
         const domainDetails = await getDomainDetails(providerConfig.token, defaultDomain)
+        console.log('[App] generateAlias - Domain details retrieved:', { domain: defaultDomain, details: domainDetails })
 
-        if (domainDetails && domainDetails.catch_all === false) {
-          // Catch-all disabled: clear the alias, it will be fetched from server
-          console.log('[App] Domain has catch-all disabled, clearing alias preview')
-          setGeneratedAlias('(Generating from server...)')
-          return
+        if (domainDetails) {
+          const isCatchAllEnabledValue = domainDetails.catch_all === true
+          console.log('[App] Setting isCatchAllEnabled to:', isCatchAllEnabledValue)
+          setIsCatchAllEnabled(isCatchAllEnabledValue)
+
+          if (domainDetails.catch_all === false) {
+            // Catch-all disabled: show placeholder, will be fetched from server on Copy & Fill
+            console.log('[App] Domain has catch-all disabled, showing placeholder')
+            setGeneratedAlias('(Generating from server...)')
+            shouldSkipAliasGeneration = true
+          } else {
+            console.log('[App] Domain has catch-all enabled, will generate alias normally')
+          }
+        } else {
+          console.log('[App] Domain details not found, generating alias normally')
+          setIsCatchAllEnabled(null)
         }
       } catch (error) {
         console.error('[App] Error checking domain catch-all status:', error)
+        setIsCatchAllEnabled(null)
         // Continue with normal generation if error
       }
+    } else {
+      // For non-Addy providers, reset catch-all state
+      setIsCatchAllEnabled(null)
+    }
+
+    // If catch-all is disabled, skip alias generation (placeholder is already set)
+    if (shouldSkipAliasGeneration) {
+      console.log('[App] Skipping alias generation for catch-all disabled domain')
+      return
     }
 
     const localPart = generateLocalPart({
@@ -68,6 +93,7 @@ function App() {
     })
 
     const alias = provider.generateAddress(localPart, defaultDomain)
+    console.log('[App] Generated alias:', alias)
     setGeneratedAlias(alias)
   }
 
@@ -121,7 +147,12 @@ function App() {
 
           const provider = providerRegistry.get(providerConfig.id);
           if (provider && provider.createAlias) {
-            const result = await provider.createAlias(generatedAlias, providerConfig.token);
+            // If catch-all is disabled (Addy specific), we pass the domain but no alias
+            // This triggers server-side generation in AddyProvider
+            const aliasToCreate = (providerConfig.id === 'addy' && isCatchAllEnabled === false) ? '' : generatedAlias;
+            const domainForCreation = (providerConfig.id === 'addy' && isCatchAllEnabled === false) ? defaultDomain : undefined;
+
+            const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation);
             if (result.success) {
               console.log('  ✓ Alias successfully created on server');
               // Use server-returned alias if available
@@ -333,15 +364,20 @@ function App() {
       {/* Provider Selector */}
       {providers.length > 1 && (
         <div className="px-5 pt-3">
-          <select
-            value={selectedProviderId}
-            onChange={(e) => handleProviderChange(e.target.value)}
-            className="w-full h-9 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 px-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            {providers.map(p => (
-              <option key={p.id} value={p.id}>{providerRegistry.get(p.id)?.name || p.id}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={selectedProviderId}
+              onChange={(e) => handleProviderChange(e.target.value)}
+              className="w-full h-9 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer"
+            >
+              {providers.map(p => (
+                <option key={p.id} value={p.id}>{providerRegistry.get(p.id)?.name || p.id}</option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+              <ChevronDown className="w-4 h-4" />
+            </div>
+          </div>
         </div>
       )}
 
@@ -349,46 +385,69 @@ function App() {
       <div className="bg-slate-900 rounded-2xl p-4 shadow-lg border border-slate-800/50 mb-6 mx-5 mt-5">
         {/* Tabs */}
         <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
-          {['uuid', 'random', 'domain', 'custom'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => handleTabChange(tab)}
-              className={cn(
-                "flex-1 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize relative",
-                activeTab === tab
-                  ? "bg-slate-800 text-white shadow-sm"
-                  : "text-slate-500 hover:text-slate-300"
-              )}
-            >
-              {tab === 'uuid' ? 'UUID' : tab}
-              {/* Lock icon for pro features */}
-              {['domain', 'custom'].includes(tab) && !isPro && (
-                <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500/50 rounded-full"></span>
-              )}
-            </button>
-          ))}
+          {['uuid', 'random', 'domain', 'custom'].map((tab) => {
+            // Disable ALL tabs if catch-all is disabled (isCatchAllEnabled === false)
+            // Note: isCatchAllEnabled is null for non-Addy providers or when not yet determined
+            const isDisabledByCatchAll = isCatchAllEnabled === false;
+            const isDisabledByPro = ['domain', 'custom'].includes(tab) && !isPro
+            const isDisabled = isDisabledByCatchAll || isDisabledByPro
+
+            return (
+              <button
+                key={tab}
+                onClick={() => !isDisabled && handleTabChange(tab)}
+                disabled={isDisabled}
+                className={cn(
+                  "flex-1 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize relative",
+                  isDisabled
+                    ? "opacity-40 cursor-not-allowed text-slate-600"
+                    : activeTab === tab
+                      ? "bg-slate-800 text-white shadow-sm"
+                      : "text-slate-500 hover:text-slate-300"
+                )}
+              >
+                {tab === 'uuid' ? 'UUID' : tab}
+                {/* Lock icon for pro features or catch-all restriction */}
+                {['domain', 'custom'].includes(tab) && (isDisabledByPro || isDisabledByCatchAll) && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500/50 rounded-full"></span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {/* Generated Alias Input */}
         <div className="space-y-2 mb-2">
           <label className="text-xs font-medium text-slate-400 ml-1">Generated Alias</label>
-          <div className="relative group">
-            <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
-            <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
-              <textarea
-                value={generatedAlias}
-                readOnly
-                rows={3}
-                className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
-              />
-              <button
-                onClick={generateAlias}
-                className="absolute right-2 p-2 text-slate-500 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
+
+          {isCatchAllEnabled !== false && (
+            <div className="relative group">
+              <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
+              <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
+                <textarea
+                  value={generatedAlias}
+                  readOnly
+                  rows={3}
+                  className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
+                />
+                <button
+                  onClick={generateAlias}
+                  className="absolute right-2 p-2 text-slate-500 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Info message for catch-all disabled domains */}
+          {isCatchAllEnabled === false && (
+            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <p className="text-xs text-blue-300 leading-relaxed">
+                Custom aliases not supported. Click 'Copy & Fill' to generate.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

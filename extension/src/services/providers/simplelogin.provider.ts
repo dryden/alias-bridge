@@ -92,7 +92,7 @@ export class SimpleLoginProvider implements AliasProvider {
     }
 
 
-    async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string }> {
+    async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
             console.log('[SimpleLogin] Creating alias on server:', alias);
 
@@ -203,21 +203,21 @@ export class SimpleLoginProvider implements AliasProvider {
                     })
                 });
 
-                const responseText = await response.text();
-                console.log('[SimpleLogin] Create response:', response.status, responseText);
+                const responseData = await response.json();
+                console.log('[SimpleLogin] Create response:', response.status, responseData);
 
                 if (response.ok) {
                     console.log('[SimpleLogin] ✓ Alias successfully created');
-                    return { success: true };
+                    return { success: true, createdAlias: responseData.alias };
                 }
 
                 if (response.status === 409) {
                     console.log('[SimpleLogin] ✓ Alias already exists (409)');
-                    return { success: true }; // Already exists
+                    return { success: true, createdAlias: alias }; // Already exists, assume requested alias is valid
                 }
 
-                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseText);
-                return { success: false, error: `${response.status}: ${responseText}` };
+                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseData);
+                return { success: false, error: `${response.status}: ${JSON.stringify(responseData)}` };
             } else {
                 // For custom domains, use the full alias
                 console.log('[SimpleLogin] Creating custom domain alias:', alias);
@@ -235,21 +235,21 @@ export class SimpleLoginProvider implements AliasProvider {
                     })
                 });
 
-                const responseText = await response.text();
-                console.log('[SimpleLogin] Create response:', response.status, responseText);
+                const responseData = await response.json();
+                console.log('[SimpleLogin] Create response:', response.status, responseData);
 
                 if (response.ok) {
                     console.log('[SimpleLogin] ✓ Alias successfully created');
-                    return { success: true };
+                    return { success: true, createdAlias: responseData.alias };
                 }
 
                 if (response.status === 409) {
                     console.log('[SimpleLogin] ✓ Alias already exists (409)');
-                    return { success: true }; // Already exists
+                    return { success: true, createdAlias: alias }; // Already exists
                 }
 
-                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseText);
-                return { success: false, error: `${response.status}: ${responseText}` };
+                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseData);
+                return { success: false, error: `${response.status}: ${JSON.stringify(responseData)}` };
             }
         } catch (e) {
             console.error('[SimpleLogin] ✗ Exception creating alias:', e);
