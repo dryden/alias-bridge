@@ -24,8 +24,7 @@ export class AddyProvider implements AliasProvider {
 
     async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean }> {
         try {
-            console.log('[Addy.io] Processing alias:', alias);
-            console.log('[Addy.io] Note: For Addy with catch-all enabled, aliases are auto-created when mail is received');
+            console.log('[Addy.io] Creating alias:', alias);
 
             // Parse the alias
             const atIndex = alias.indexOf('@');
@@ -62,36 +61,87 @@ export class AddyProvider implements AliasProvider {
                 console.log('[Addy.io] Domain details fetched:', domainDetails);
 
                 if (domainDetails && domainDetails.catch_all === true) {
-                    console.log('[Addy.io] ✓ Domain has catch-all enabled - alias will be auto-created when mail arrives:', alias);
+                    console.log('[Addy.io] Domain has catch-all enabled, no API call needed:', domain);
                     return { success: true, isCatchAllDomain: true };
                 } else {
-                    console.log('[Addy.io] Domain has catch-all disabled - user must create alias manually in Addy:', domain);
+                    console.log('[Addy.io] Domain has catch-all disabled, API call needed:', domain);
+                    // Username/shared domains don't need domain ID lookup, proceed directly to API call
+                }
+            }
+
+            // For custom domains, verify domain exists first
+            if (!isUsernameOrSharedDomain) {
+                console.log('[Addy.io] Custom domain detected, verifying domain exists...');
+                const domainDetails = await getDomainDetails(token, domain);
+                if (!domainDetails) {
+                    console.error('[Addy.io] Failed to find domain:', domain);
                     return {
-                        success: true,
-                        isCatchAllDomain: false,
-                        error: `To use a custom alias format with this domain, please create it first in your Addy.io account. The format will be respected once it exists.`
+                        success: false,
+                        error: `Unable to find domain "${domain}". Please check that this domain is properly configured in your Addy account.`
                     };
                 }
             }
 
-            // For custom domains, check if catch-all is enabled
-            console.log('[Addy.io] Custom domain detected:', domain);
-            const domainDetails = await getDomainDetails(token, domain);
+            console.log('[Addy.io] Creating alias via API with domain:', domain);
 
-            if (domainDetails && domainDetails.catch_all === true) {
-                console.log('[Addy.io] ✓ Custom domain has catch-all enabled - alias will be auto-created when mail arrives:', alias);
-                return { success: true, isCatchAllDomain: true };
-            } else {
-                console.log('[Addy.io] Custom domain catch-all disabled or not found - user must create alias manually:', domain);
-                return {
-                    success: true,
-                    isCatchAllDomain: false,
-                    error: `To use a custom alias format with this domain, please create it first in your Addy.io account. The format will be respected once it exists.`
-                };
+            // Create alias via Addy API with custom format
+            // Using format: "custom" tells Addy to use the exact local_part we specified
+            const response = await fetch('https://app.addy.io/api/v1/aliases', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    local_part: localPart,
+                    domain: domain,
+                    format: 'custom',
+                    description: 'Created by Alias Bridge'
+                })
+            });
+
+            const responseData = await response.json();
+            console.log('[Addy.io] Create response:', response.status, responseData);
+
+            if (response.ok) {
+                const createdAlias = responseData.data?.address || alias;
+                console.log('[Addy.io] ✓ Alias successfully created:', createdAlias);
+                console.log('[Addy.io] Expected alias:', alias);
+                console.log('[Addy.io] Match:', createdAlias === alias ? 'YES ✓' : 'NO - mismatch');
+                return { success: true };
             }
 
+            // Handle specific 422 errors
+            if (response.status === 422) {
+                const errorMessage = responseData.message?.toLowerCase() || '';
+                const errors = responseData.errors || {};
+
+                console.log('[Addy.io] 422 Error details:', { message: responseData.message, errors });
+
+                // Check if it's an "alias already exists" error
+                if (errorMessage.includes('alias') || errorMessage.includes('exists')) {
+                    console.log('[Addy.io] Alias already exists (422)');
+                    return { success: true };
+                }
+
+                // If it's a domain field error
+                if (errors.domain || errorMessage.includes('domain')) {
+                    console.error('[Addy.io] Domain field error');
+                    return {
+                        success: false,
+                        error: `Domain error: ${responseData.message || 'The domain could not be applied'}`
+                    };
+                }
+            }
+
+            return {
+                success: false,
+                error: `${response.status}: ${responseData.message || 'Unknown error'}`
+            };
+
         } catch (e) {
-            console.error('[Addy.io] Exception processing alias:', e);
+            console.error('[Addy.io] Exception creating alias:', e);
             return { success: false, error: String(e) };
         }
     }
