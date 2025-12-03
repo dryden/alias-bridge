@@ -92,30 +92,32 @@ function App() {
         const shouldWaitServerConfirmation = providerConfig.id === 'simplelogin' || providerConfig.waitServerConfirmation === true;
 
         if (shouldWaitServerConfirmation) {
-          setProcessingStep('Creating alias on server...');
-          console.log('[Step 1/3] Server Confirmation Required');
+          setProcessingStep('Checking alias requirements...');
+          console.log('[Step 1/3] Checking Alias Requirements');
           console.log('  - Provider:', providerConfig.id);
-          console.log('  - Creating alias on server...');
 
           const provider = providerRegistry.get(providerConfig.id);
           if (provider && provider.createAlias) {
             const result = await provider.createAlias(generatedAlias, providerConfig.token);
             if (result.success) {
-              console.log('  ✓ Alias successfully created on server');
-            } else {
-              console.error('  ✗ Failed to create alias on server:', result.error);
-              // For Addy, only continue if it's a catch-all domain (where creation isn't needed)
-              // For other providers or real API errors, throw immediately
-              if (providerConfig.id === 'addy' && result.isCatchAllDomain) {
-                console.log('  ℹ️ Catch-all domain detected, continuing without server confirmation');
+              if (result.isCatchAllDomain === true) {
+                console.log('  ✓ Catch-all domain detected - alias will be auto-created when mail arrives');
+              } else if (result.isCatchAllDomain === false) {
+                console.log('  ℹ️ Non-catch-all domain detected');
+                if (result.error) {
+                  console.log('  📝 User note:', result.error);
+                }
               } else {
-                throw new Error(`Failed to create alias: ${result.error}`);
+                console.log('  ✓ Alias ready to use');
               }
+            } else {
+              console.error('  ✗ Failed to process alias:', result.error);
+              throw new Error(`Failed to process alias: ${result.error}`);
             }
           }
         } else {
           console.log('[Step 1/3] No Server Confirmation Required');
-          console.log('  - waitServerConfirmation is disabled for Addy');
+          console.log('  - waitServerConfirmation is disabled for this provider');
         }
       }
 

@@ -1,7 +1,5 @@
 import type { AliasProvider } from './types';
-import { verifyToken, getDomains, getDomainId, getDomainDetails, SHARED_DOMAINS } from '../addy';
-
-const BASE_URL = 'https://app.addy.io/api/v1';
+import { verifyToken, getDomains, getDomainDetails, SHARED_DOMAINS } from '../addy';
 
 export class AddyProvider implements AliasProvider {
     id = 'addy';
@@ -26,7 +24,8 @@ export class AddyProvider implements AliasProvider {
 
     async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean }> {
         try {
-            console.log('[Addy.io] Creating alias:', alias);
+            console.log('[Addy.io] Processing alias:', alias);
+            console.log('[Addy.io] Note: For Addy with catch-all enabled, aliases are auto-created when mail is received');
 
             // Parse the alias
             const atIndex = alias.indexOf('@');
@@ -40,7 +39,6 @@ export class AddyProvider implements AliasProvider {
             console.log('[Addy.io] Parsed -', { localPart, domain });
 
             // Check if this is a username domain (e.g., 0309.4wrd.cc) or root shared domain
-            // Need to check actual catch-all status before deciding if API call is needed
             const parts = domain.split('.');
             const potentialSharedDomain = parts.length >= 2 ? parts.slice(1).join('.') : null;
 
@@ -64,88 +62,36 @@ export class AddyProvider implements AliasProvider {
                 console.log('[Addy.io] Domain details fetched:', domainDetails);
 
                 if (domainDetails && domainDetails.catch_all === true) {
-                    console.log('[Addy.io] Domain has catch-all enabled, no API call needed:', domain);
+                    console.log('[Addy.io] ✓ Domain has catch-all enabled - alias will be auto-created when mail arrives:', alias);
                     return { success: true, isCatchAllDomain: true };
                 } else {
-                    console.log('[Addy.io] Domain has catch-all disabled, API call needed:', domain);
-                    // Username/shared domains don't need domain ID lookup, proceed directly to API call
-                }
-            }
-
-            // For custom domains, verify domain exists first
-            let domainId = null;
-            if (!isUsernameOrSharedDomain) {
-                console.log('[Addy.io] Custom domain detected, verifying domain exists...');
-                domainId = await getDomainId(token, domain);
-
-                if (domainId === null) {
-                    console.error('[Addy.io] Failed to find domain ID for custom domain:', domain);
+                    console.log('[Addy.io] Domain has catch-all disabled - user must create alias manually in Addy:', domain);
                     return {
-                        success: false,
-                        error: `Unable to find domain "${domain}". Please check that this domain is properly configured in your Addy account.`
+                        success: true,
+                        isCatchAllDomain: false,
+                        error: `To use a custom alias format with this domain, please create it first in your Addy.io account. The format will be respected once it exists.`
                     };
                 }
             }
 
-            console.log('[Addy.io] Creating alias via API with domain:', domain);
+            // For custom domains, check if catch-all is enabled
+            console.log('[Addy.io] Custom domain detected:', domain);
+            const domainDetails = await getDomainDetails(token, domain);
 
-            // Create alias via Addy API
-            // Note: Addy API expects 'domain' (the domain name), not 'domain_id'
-            const response = await fetch(`${BASE_URL}/aliases`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    local_part: localPart,
-                    domain: domain,
-                    description: 'Created by Alias Bridge'
-                })
-            });
-
-            const responseData = await response.json();
-            console.log('[Addy.io] Create response:', response.status, responseData);
-
-            if (response.ok) {
-                const createdAlias = responseData.data?.address || alias;
-                console.log('[Addy.io] ✓ Alias successfully created:', createdAlias);
-                console.log('[Addy.io] Expected alias:', alias);
-                console.log('[Addy.io] Match:', createdAlias === alias ? 'YES' : 'NO - server may have modified it');
-                return { success: true };
+            if (domainDetails && domainDetails.catch_all === true) {
+                console.log('[Addy.io] ✓ Custom domain has catch-all enabled - alias will be auto-created when mail arrives:', alias);
+                return { success: true, isCatchAllDomain: true };
+            } else {
+                console.log('[Addy.io] Custom domain catch-all disabled or not found - user must create alias manually:', domain);
+                return {
+                    success: true,
+                    isCatchAllDomain: false,
+                    error: `To use a custom alias format with this domain, please create it first in your Addy.io account. The format will be respected once it exists.`
+                };
             }
-
-            // Handle specific 422 errors
-            if (response.status === 422) {
-                const errorMessage = responseData.message?.toLowerCase() || '';
-                const errors = responseData.errors || {};
-
-                console.log('[Addy.io] 422 Error details:', { message: responseData.message, errors });
-
-                // Check if it's an "alias already exists" error
-                if (errorMessage.includes('alias') || errorMessage.includes('exists')) {
-                    console.log('[Addy.io] Alias already exists (422)');
-                    return { success: true };
-                }
-
-                // If it's a domain field error, it means our domain_id was wrong
-                if (errors.domain || errorMessage.includes('domain')) {
-                    console.error('[Addy.io] Domain field error - domain_id may be invalid');
-                    return {
-                        success: false,
-                        error: `Domain configuration error: ${responseData.message || 'The domain ID could not be applied'}`
-                    };
-                }
-            }
-
-            return {
-                success: false,
-                error: `${response.status}: ${responseData.message || 'Unknown error'}`
-            };
 
         } catch (e) {
-            console.error('[Addy.io] Exception creating alias:', e);
+            console.error('[Addy.io] Exception processing alias:', e);
             return { success: false, error: String(e) };
         }
     }
