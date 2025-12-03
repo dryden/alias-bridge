@@ -1,6 +1,53 @@
-import { generateAlias, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/aliasGenerator';
+import { generateLocalPart, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/aliasGenerator';
 
 console.log("Alias Bridge content script loaded");
+
+// --- Minimal Provider Logic for Content Script ---
+// Since we can't easily import the full provider service/registry due to dependencies,
+// we'll implement a lightweight version here that matches the logic in the main extension.
+
+interface ProviderConfig {
+    id: string;
+    enabled: boolean;
+    token: string;
+    defaultDomain?: string;
+    activeFormat?: string;
+    customRule?: CustomRule;
+}
+
+interface MultiProviderSettings {
+    providers: Record<string, ProviderConfig>;
+    defaultProviderId: string;
+}
+
+
+const generateAddress = (providerId: string, localPart: string, domain: string): string => {
+    if (providerId === 'simplelogin') {
+        // Clean localPart for SimpleLogin (lowercase, alphanum + underscore only)
+        let cleanLocal = localPart.toLowerCase().replace(/[^a-z0-9_]/g, '');
+        // Ensure it starts with a letter (SimpleLogin requires leading letter)
+        if (!/^[a-z]/.test(cleanLocal)) {
+            cleanLocal = 'a' + cleanLocal;
+        }
+        // Limit length (max 20 chars for SimpleLogin) after ensuring leading letter
+        if (cleanLocal.length > 20) {
+            cleanLocal = cleanLocal.substring(0, 20);
+        }
+        if (!cleanLocal) {
+            cleanLocal = 'alias';
+        }
+        cleanLocal = cleanLocal.replace(/^_+|_+$/g, '');
+        // SimpleLogin logic: if domain contains @, it's a suffix, otherwise append @domain
+        if (domain.includes('@')) {
+            return `${cleanLocal}${domain}`;
+        }
+        return `${cleanLocal}@${domain}`;
+    } else {
+        // Addy.io logic (and default): localPart@domain
+        return `${localPart}@${domain}`;
+    }
+};
+
 
 // Function to create and inject the icon
 function injectIcon(input: HTMLInputElement) {
@@ -11,11 +58,6 @@ function injectIcon(input: HTMLInputElement) {
     wrapper.style.position = 'relative';
     wrapper.style.display = 'inline-block';
     wrapper.style.width = input.offsetWidth > 0 ? `${input.offsetWidth}px` : '100%';
-
-    // Insert wrapper before input, then move input into wrapper
-    // Note: This might break some layouts, a safer approach is to position absolute overlay
-    // Let's try absolute positioning relative to the input's parent or body
-    // But for simplicity in MVP, let's try to place an icon INSIDE the input on the right
 
     const iconContainer = document.createElement('div');
     iconContainer.style.position = 'absolute';
@@ -37,12 +79,6 @@ function injectIcon(input: HTMLInputElement) {
     const logoUrl = chrome.runtime.getURL('icon-16.png');
     iconContainer.innerHTML = `<img src="${logoUrl}" style="width: 14px; height: 14px; display: block;" />`;
 
-    // We need a way to position this correctly. 
-    // A common technique is to wrap the input, but that's invasive.
-    // Another is to append to body and calculate position.
-
-    // For this MVP, let's try to append to the input's parent and position absolute
-    // ensuring the parent is relative.
     const parent = input.parentElement;
     if (parent) {
         const parentStyle = window.getComputedStyle(parent);
@@ -50,8 +86,6 @@ function injectIcon(input: HTMLInputElement) {
             parent.style.position = 'relative';
         }
 
-        // Adjust right position based on input padding/margin if needed
-        // For now, just append
         parent.appendChild(iconContainer);
 
         // Mark input as processed
@@ -63,24 +97,165 @@ function injectIcon(input: HTMLInputElement) {
             e.stopPropagation();
 
             // Fetch settings
-            chrome.storage.local.get(['userData', 'defaultFormat', 'customRule', 'defaultDomain'], async (result) => {
-                const userData = result.userData;
-                const defaultFormat = result.defaultFormat || 'uuid';
-                const customRule = result.customRule ? (result.customRule as CustomRule) : DEFAULT_CUSTOM_RULE;
-                const defaultDomain = result.defaultDomain || 'anonaddy.com';
+            chrome.storage.local.get(['multiProviderSettings', 'userData'], async (result) => {
+                const settings = result.multiProviderSettings as MultiProviderSettings | undefined;
 
-                if (!userData) {
-                    console.error('User data not found');
+                if (!settings || !settings.defaultProviderId || !settings.providers[settings.defaultProviderId]) {
+                    console.warn('Alias Bridge: No provider configured or default provider missing.');
+                    // Fallback to legacy check or alert user?
+                    // For now, let's just log. The popup handles the "setup required" state.
                     return;
                 }
 
-                const alias = generateAlias({
-                    type: defaultFormat as string,
-                    domain: defaultDomain as string,
-                    username: (userData as any).username,
+                const providerId = settings.defaultProviderId;
+                const config = settings.providers[providerId];
+
+                if (!config.enabled) {
+                    console.warn('Alias Bridge: Default provider is disabled.');
+                    return;
+                }
+
+                const defaultFormat = config.activeFormat || 'uuid';
+                const defaultDomain = config.defaultDomain || '';
+                const customRule = config.customRule || DEFAULT_CUSTOM_RULE;
+
+                if (!defaultDomain) {
+                    console.warn('Alias Bridge: No default domain configured for provider.');
+                    return;
+                }
+
+                const localPart = generateLocalPart({
+                    type: defaultFormat,
                     currentUrl: window.location.href,
                     customRule: customRule
                 });
+
+                const alias = generateAddress(providerId, localPart, defaultDomain);
+
+                // Create alias on server if needed (SimpleLogin)
+                if (providerId === 'simplelogin') {
+                    try {
+                        const BASE_URL = 'https://app.simplelogin.io/api';
+
+                        // Parse alias
+                        const atIndex = alias.indexOf('@');
+                        const aliasLocalPart = alias.substring(0, atIndex);
+                        const aliasDomainPart = alias.substring(atIndex + 1);
+
+                        // Get mailboxes
+                        const mailboxesRes = await fetch(`${BASE_URL}/v2/mailboxes`, {
+                            headers: { 'Authentication': config.token }
+                        });
+
+                        if (!mailboxesRes.ok) {
+                            console.warn('Failed to fetch mailboxes:', await mailboxesRes.text());
+                            return;
+                        }
+
+                        const mailboxesData = await mailboxesRes.json();
+                        if (!mailboxesData.mailboxes || mailboxesData.mailboxes.length === 0) {
+                            console.warn('No mailboxes found');
+                            return;
+                        }
+
+                        const mailboxId = mailboxesData.mailboxes[0].id;
+
+                        // Get alias options
+                        const optionsRes = await fetch(`${BASE_URL}/v5/alias/options`, {
+                            headers: { 'Authentication': config.token }
+                        });
+
+                        if (!optionsRes.ok) {
+                            console.warn('Failed to get options:', await optionsRes.text());
+                            return;
+                        }
+
+                        const optionsData = await optionsRes.json();
+
+                        // Find matching suffix
+                        const fullSuffix = `@${aliasDomainPart}`;
+                        const matchingSuffix = optionsData.suffixes?.find((s: any) => {
+                            const suffixStr = typeof s === 'string' ? s : s.suffix;
+                            return suffixStr === fullSuffix || (suffixStr.startsWith('.') && suffixStr.endsWith(fullSuffix));
+                        });
+
+                        if (matchingSuffix) {
+                            // Suffix-based alias
+                            const suffixStr = typeof matchingSuffix === 'string' ? matchingSuffix : matchingSuffix.suffix;
+                            const signedSuffix = typeof matchingSuffix === 'string' ? matchingSuffix : matchingSuffix.signed_suffix;
+
+                            let prefix = aliasLocalPart;
+                            if (suffixStr.startsWith('.')) {
+                                const suffixWord = suffixStr.substring(0, suffixStr.indexOf('@'));
+                                if (aliasLocalPart.endsWith(suffixWord)) {
+                                    prefix = aliasLocalPart.substring(0, aliasLocalPart.length - suffixWord.length);
+                                }
+                            }
+
+
+                            // Clean prefix - SimpleLogin only accepts lowercase letters, numbers, and underscores
+                            console.log('SimpleLogin: Original prefix:', prefix, 'Length:', prefix.length);
+
+                            prefix = prefix.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                            console.log('SimpleLogin: After cleaning:', prefix, 'Length:', prefix.length);
+
+                            // Limit length (SimpleLogin max 32 chars)
+                            if (prefix.length > 32) {
+                                prefix = prefix.substring(0, 32);
+                            }
+
+                            if (!prefix || prefix.length === 0) {
+                                prefix = 'alias';
+                            }
+
+                            // Remove leading/trailing underscores
+                            prefix = prefix.replace(/^_+|_+$/g, '');
+
+                            console.log('SimpleLogin: Final prefix:', prefix, 'Length:', prefix.length);
+                            console.log('Creating SimpleLogin alias with suffix:', { prefix, signedSuffix, suffixStr });
+
+                            const createRes = await fetch(`${BASE_URL}/v3/alias/custom/new`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authentication': config.token,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    alias_prefix: prefix,
+                                    signed_suffix: signedSuffix,
+                                    mailbox_ids: [mailboxId],
+                                    note: 'Created by Alias Bridge'
+                                })
+                            });
+
+                            if (!createRes.ok && createRes.status !== 409) {
+                                console.warn('Failed to create SimpleLogin alias:', await createRes.text());
+                            }
+                        } else {
+                            // Custom domain alias
+                            console.log('Creating SimpleLogin custom domain alias:', alias);
+                            const createRes = await fetch(`${BASE_URL}/v2/alias/custom/new`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authentication': config.token,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    alias: alias,
+                                    mailbox_ids: [mailboxId],
+                                    note: 'Created by Alias Bridge'
+                                })
+                            });
+
+                            if (!createRes.ok && createRes.status !== 409) {
+                                console.warn('Failed to create SimpleLogin alias:', await createRes.text());
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Error creating SimpleLogin alias:', err);
+                    }
+                }
+
 
                 // Fill input
                 input.value = alias;
@@ -121,20 +296,18 @@ const observer = new MutationObserver((mutations) => {
     });
 });
 
-// Initial check for API token
-chrome.storage.local.get(['addyToken'], (result) => {
-    if (result.addyToken) {
-        // Initial scan
-        document.querySelectorAll('input[type="email"]').forEach((input) => {
-            injectIcon(input as HTMLInputElement);
-        });
+// Initial check - inject icon on all email inputs
+chrome.storage.local.get(['multiProviderSettings'], () => {
+    // Initial scan
+    document.querySelectorAll('input[type="email"]').forEach((input) => {
+        injectIcon(input as HTMLInputElement);
+    });
 
-        // Start observing
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    }
+    // Start observing
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 });
 
 // Listen for messages from background script (Context Menu)

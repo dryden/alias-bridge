@@ -24,29 +24,18 @@ export interface AliasGeneratorOptions {
     customRule?: CustomRule;
 }
 
-export function generateAlias(options: AliasGeneratorOptions): string {
-    const { type, domain, username, currentUrl, customRule = DEFAULT_CUSTOM_RULE } = options;
-
-    // Determine the email domain part
-    // If the domain is a shared root (fallback), append username.
-    // Otherwise, assume the domain passed is the full domain (e.g. username.anonaddy.com or custom.com)
-    let emailDomain = domain;
-    if (domain === 'anonaddy.com' || domain === 'anonaddy.me') {
-        emailDomain = `${username}.${domain}`;
-    }
+export function generateLocalPart(options: Omit<AliasGeneratorOptions, 'domain' | 'username'>): string {
+    const { type, currentUrl, customRule = DEFAULT_CUSTOM_RULE } = options;
 
     switch (type) {
         case 'uuid': {
-            const uuid = crypto.randomUUID();
-            return `${uuid}@${emailDomain}`;
+            return crypto.randomUUID();
         }
         case 'random': {
-            const random = Math.random().toString(36).substring(2, 10);
-            return `${random}@${emailDomain}`;
+            return Math.random().toString(36).substring(2, 10);
         }
         case 'domain': {
-            const siteDomain = getDomainFromUrl(currentUrl) || 'site';
-            return `${siteDomain}@${emailDomain}`;
+            return getDomainFromUrl(currentUrl) || 'site';
         }
         case 'custom': {
             const now = new Date();
@@ -84,9 +73,24 @@ export function generateAlias(options: AliasGeneratorOptions): string {
             const suffix = getPart(customRule.suffixType, customRule.suffixText, true);
             const siteSlug = getDomainFromUrl(currentUrl) || 'site';
 
-            return `${prefix}${siteSlug}${suffix}@${emailDomain}`;
+            return `${prefix}${siteSlug}${suffix}`;
         }
         default:
             return '';
     }
+}
+
+export function generateAlias(options: AliasGeneratorOptions): string {
+    const { domain, username } = options;
+    const localPart = generateLocalPart(options);
+
+    // Determine the email domain part
+    // If the domain is a shared root (fallback), append username.
+    // Otherwise, assume the domain passed is the full domain (e.g. username.anonaddy.com or custom.com)
+    let emailDomain = domain;
+    if (domain === 'anonaddy.com' || domain === 'anonaddy.me') {
+        emailDomain = `${username}.${domain}`;
+    }
+
+    return `${localPart}@${emailDomain}`;
 }
