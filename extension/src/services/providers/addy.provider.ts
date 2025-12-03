@@ -1,5 +1,5 @@
 import type { AliasProvider } from './types';
-import { verifyToken, getDomains, getDomainId, SHARED_DOMAINS } from '../addy';
+import { verifyToken, getDomains, getDomainId, getDomainDetails, SHARED_DOMAINS } from '../addy';
 
 const BASE_URL = 'https://app.addy.io/api/v1';
 
@@ -39,20 +39,37 @@ export class AddyProvider implements AliasProvider {
 
             console.log('[Addy.io] Parsed -', { localPart, domain });
 
-            // Check if this is a username domain (e.g., 0309.4wrd.cc)
-            // These use catch-all and don't need API creation
+            // Check if this is a username domain (e.g., 0309.4wrd.cc) or root shared domain
+            // Need to check actual catch-all status before deciding if API call is needed
             const parts = domain.split('.');
             const potentialSharedDomain = parts.length >= 2 ? parts.slice(1).join('.') : null;
 
+            let isDomainWithFlexibleCatchAll = false;
+
+            // Detect if it's a username domain format
             if (potentialSharedDomain && SHARED_DOMAINS.includes(potentialSharedDomain)) {
-                console.log('[Addy.io] Username domain detected (catch-all), no API call needed:', domain);
-                return { success: true, isCatchAllDomain: true };
+                console.log('[Addy.io] Username domain detected:', domain);
+                isDomainWithFlexibleCatchAll = true;
             }
 
-            // Check if it's a root shared domain
+            // Detect if it's a root shared domain
             if (SHARED_DOMAINS.includes(domain)) {
-                console.log('[Addy.io] Root shared domain detected (catch-all), no API call needed:', domain);
-                return { success: true, isCatchAllDomain: true };
+                console.log('[Addy.io] Root shared domain detected:', domain);
+                isDomainWithFlexibleCatchAll = true;
+            }
+
+            // For these domain types, check actual catch-all status
+            if (isDomainWithFlexibleCatchAll) {
+                const domainDetails = await getDomainDetails(token, domain);
+                console.log('[Addy.io] Domain details fetched:', domainDetails);
+
+                if (domainDetails && domainDetails.catch_all === true) {
+                    console.log('[Addy.io] Domain has catch-all enabled, no API call needed:', domain);
+                    return { success: true, isCatchAllDomain: true };
+                } else {
+                    console.log('[Addy.io] Domain has catch-all disabled, API call needed:', domain);
+                    // Continue to API call section below
+                }
             }
 
             // For custom domains, verify domain exists and call the API
