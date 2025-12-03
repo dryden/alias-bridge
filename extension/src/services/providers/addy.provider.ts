@@ -55,21 +55,22 @@ export class AddyProvider implements AliasProvider {
                 return { success: true, isCatchAllDomain: true };
             }
 
-            // For custom domains, get the domain ID and call the API
-            console.log('[Addy.io] Custom domain detected, fetching domain ID...');
+            // For custom domains, verify domain exists and call the API
+            console.log('[Addy.io] Custom domain detected, verifying domain exists...');
             const domainId = await getDomainId(token, domain);
 
             if (domainId === null) {
                 console.error('[Addy.io] Failed to find domain ID for custom domain:', domain);
                 return {
                     success: false,
-                    error: `Unable to find domain ID for "${domain}". Please check that this domain is properly configured in your Addy account.`
+                    error: `Unable to find domain "${domain}". Please check that this domain is properly configured in your Addy account.`
                 };
             }
 
-            console.log('[Addy.io] Creating alias via API with domain_id:', domainId);
+            console.log('[Addy.io] Creating alias via API with domain:', domain);
 
             // Create alias via Addy API
+            // Note: Addy API expects 'domain' (the domain name), not 'domain_id'
             const response = await fetch(`${BASE_URL}/aliases`, {
                 method: 'POST',
                 headers: {
@@ -79,7 +80,7 @@ export class AddyProvider implements AliasProvider {
                 },
                 body: JSON.stringify({
                     local_part: localPart,
-                    domain_id: domainId,
+                    domain: domain,
                     description: 'Created by Alias Bridge'
                 })
             });
