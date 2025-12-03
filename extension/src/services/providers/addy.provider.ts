@@ -109,7 +109,10 @@ export class AddyProvider implements AliasProvider {
             console.log('[Addy.io] Create response:', response.status, responseData);
 
             if (response.ok) {
-                console.log('[Addy.io] ✓ Alias successfully created');
+                const createdAlias = responseData.data?.address || alias;
+                console.log('[Addy.io] ✓ Alias successfully created:', createdAlias);
+                console.log('[Addy.io] Expected alias:', alias);
+                console.log('[Addy.io] Match:', createdAlias === alias ? 'YES' : 'NO - server may have modified it');
                 return { success: true };
             }
 
