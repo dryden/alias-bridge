@@ -36,11 +36,30 @@ function App() {
     }
   }
 
-  const generateAlias = () => {
+  const generateAlias = async () => {
     if (!providerConfig || !defaultDomain) return
 
     const provider = providerRegistry.get(providerConfig.id)
     if (!provider) return
+
+    // For Addy, check if domain has catch-all enabled
+    // If catch-all is disabled, don't show alias preview (it will be fetched from server)
+    if (providerConfig.id === 'addy') {
+      try {
+        const { getDomainDetails } = await import('./services/addy')
+        const domainDetails = await getDomainDetails(providerConfig.token, defaultDomain)
+
+        if (domainDetails && domainDetails.catch_all === false) {
+          // Catch-all disabled: clear the alias, it will be fetched from server
+          console.log('[App] Domain has catch-all disabled, clearing alias preview')
+          setGeneratedAlias('(Generating from server...)')
+          return
+        }
+      } catch (error) {
+        console.error('[App] Error checking domain catch-all status:', error)
+        // Continue with normal generation if error
+      }
+    }
 
     const localPart = generateLocalPart({
       type: activeTab,
@@ -87,6 +106,9 @@ function App() {
       console.log('Provider ID:', providerConfig?.id);
       console.log('Wait Server Confirmation:', providerConfig?.waitServerConfirmation);
 
+      // Track the alias to use (may be updated by server)
+      let aliasToUse = generatedAlias;
+
       // Create alias on server if needed (Addy or SimpleLogin with waitServerConfirmation enabled)
       if (providerConfig) {
         const shouldWaitServerConfirmation = providerConfig.id === 'simplelogin' || providerConfig.waitServerConfirmation === true;
@@ -102,6 +124,11 @@ function App() {
             const result = await provider.createAlias(generatedAlias, providerConfig.token);
             if (result.success) {
               console.log('  ✓ Alias successfully created on server');
+              // Use server-returned alias if available
+              if (result.createdAlias) {
+                console.log('  - Using server-created alias:', result.createdAlias);
+                aliasToUse = result.createdAlias;
+              }
             } else {
               console.error('  ✗ Failed to create alias on server:', result.error);
               // For Addy, only continue if it's a catch-all domain (where creation isn't needed)
@@ -121,8 +148,8 @@ function App() {
 
       setProcessingStep('Copying to clipboard...');
       console.log('[Step 2/3] Copying to clipboard');
-      await navigator.clipboard.writeText(generatedAlias);
-      console.log('  ✓ Alias copied to clipboard');
+      await navigator.clipboard.writeText(aliasToUse);
+      console.log('  ✓ Alias copied to clipboard:', aliasToUse);
 
       setProcessingStep('Filling email field...');
       console.log('[Step 3/3] Filling email input field');
@@ -159,7 +186,7 @@ function App() {
                 console.log('  ✓ Email filled and field focused');
               }
             },
-            args: [generatedAlias]
+            args: [aliasToUse]
           });
         }
       }

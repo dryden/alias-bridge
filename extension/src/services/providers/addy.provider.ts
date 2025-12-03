@@ -22,7 +22,7 @@ export class AddyProvider implements AliasProvider {
         return `${localPart}@${domain}`;
     }
 
-    async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean }> {
+    async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
             console.log('[Addy.io] Creating alias:', alias);
 
@@ -109,7 +109,7 @@ export class AddyProvider implements AliasProvider {
                 console.log('[Addy.io] ✓ Alias successfully created:', createdAlias);
                 console.log('[Addy.io] Expected alias:', alias);
                 console.log('[Addy.io] Match:', createdAlias === alias ? 'YES ✓' : 'NO - mismatch');
-                return { success: true };
+                return { success: true, createdAlias };
             }
 
             // Handle specific 422 errors
@@ -122,7 +122,7 @@ export class AddyProvider implements AliasProvider {
                 // Check if it's an "alias already exists" error
                 if (errorMessage.includes('alias') || errorMessage.includes('exists')) {
                     console.log('[Addy.io] Alias already exists (422)');
-                    return { success: true };
+                    return { success: true, createdAlias: alias };
                 }
 
                 // If it's a domain field error
