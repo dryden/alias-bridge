@@ -23,6 +23,10 @@ function App() {
   // License State
   const [isPro, setIsPro] = useState(false)
 
+  // UI State
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [processingStep, setProcessingStep] = useState<string | null>(null)
+
   // Handlers
   const openSettings = () => {
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.openOptionsPage) {
@@ -75,6 +79,8 @@ function App() {
   }
 
   const handleCopyAndFill = async () => {
+    setIsProcessing(true);
+    setProcessingStep(null);
     try {
       console.log('========== Alias Bridge: Copy & Fill Started ==========');
       console.log('Generated Alias:', generatedAlias);
@@ -86,6 +92,7 @@ function App() {
         const shouldWaitServerConfirmation = providerConfig.id === 'simplelogin' || providerConfig.waitServerConfirmation === true;
 
         if (shouldWaitServerConfirmation) {
+          setProcessingStep('Creating alias on server...');
           console.log('[Step 1/3] Server Confirmation Required');
           console.log('  - Provider:', providerConfig.id);
           console.log('  - Creating alias on server...');
@@ -97,8 +104,11 @@ function App() {
               console.log('  ✓ Alias successfully created on server');
             } else {
               console.error('  ✗ Failed to create alias on server:', result.error);
-              // For Addy, still continue - it might be a catch_all alias
-              if (providerConfig.id !== 'addy') {
+              // For Addy, only continue if it's a catch-all domain (where creation isn't needed)
+              // For other providers or real API errors, throw immediately
+              if (providerConfig.id === 'addy' && result.isCatchAllDomain) {
+                console.log('  ℹ️ Catch-all domain detected, continuing without server confirmation');
+              } else {
                 throw new Error(`Failed to create alias: ${result.error}`);
               }
             }
@@ -109,10 +119,12 @@ function App() {
         }
       }
 
+      setProcessingStep('Copying to clipboard...');
       console.log('[Step 2/3] Copying to clipboard');
       await navigator.clipboard.writeText(generatedAlias);
       console.log('  ✓ Alias copied to clipboard');
 
+      setProcessingStep('Filling email field...');
       console.log('[Step 3/3] Filling email input field');
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -153,9 +165,13 @@ function App() {
       }
 
       console.log('========== Alias Bridge: Copy & Fill Completed Successfully ==========');
+      setProcessingStep(null);
     } catch (err) {
       console.error('========== Alias Bridge: Copy & Fill Failed ==========');
-      console.error('Error:', err)
+      console.error('Error:', err);
+      setProcessingStep(null);
+    } finally {
+      setIsProcessing(false);
     }
   }
 
@@ -349,18 +365,47 @@ function App() {
         </div>
       </div>
 
+      {/* Processing Status */}
+      {isProcessing && processingStep && (
+        <div className="mx-5 mb-3 px-3 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-xs text-blue-300">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+            {processingStep}
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex items-center gap-3 mt-auto mb-2 px-5">
         <Button
-          className="flex-1 bg-blue-600 hover:bg-blue-500 text-white h-12 rounded-xl text-sm font-semibold shadow-lg shadow-blue-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          className={cn(
+            "flex-1 h-12 rounded-xl text-sm font-semibold shadow-lg transition-all",
+            isProcessing
+              ? "bg-blue-600/60 hover:bg-blue-600/60 text-white cursor-wait opacity-75"
+              : "bg-blue-600 hover:bg-blue-500 text-white hover:scale-[1.02] active:scale-[0.98]"
+          )}
           onClick={handleCopyAndFill}
+          disabled={isProcessing}
         >
-          Copy & Fill
+          {isProcessing ? (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              Processing...
+            </div>
+          ) : (
+            'Copy & Fill'
+          )}
         </Button>
         <Button
           variant="secondary"
-          className="w-12 bg-slate-800 hover:bg-slate-700 text-slate-200 h-12 rounded-xl border border-slate-700/50 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center p-0"
+          className={cn(
+            "w-12 h-12 rounded-xl border border-slate-700/50 transition-all flex items-center justify-center p-0",
+            isProcessing
+              ? "bg-slate-800/60 text-slate-500 cursor-not-allowed"
+              : "bg-slate-800 hover:bg-slate-700 text-slate-200 hover:scale-[1.02] active:scale-[0.98]"
+          )}
           onClick={() => navigator.clipboard.writeText(generatedAlias)}
+          disabled={isProcessing}
           title="Copy Only"
         >
           <Copy className="w-5 h-5" />

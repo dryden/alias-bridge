@@ -178,3 +178,32 @@ export const getDomains = async (token: string): Promise<string[]> => {
         return ['addy.io', 'anonaddy.com', 'anonaddy.me'];
     }
 };
+
+export const getDomainId = async (token: string, domainName: string): Promise<number | null> => {
+    try {
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        };
+
+        console.log('[Addy] getDomainId - Looking up ID for domain:', domainName);
+
+        // Fetch custom domains to get the domain ID
+        const domainsRes = await fetch(`${BASE_URL}/domains`, { headers });
+        if (domainsRes.ok) {
+            const domainsData = await domainsRes.json();
+            const domainData = domainsData.data?.find((d: any) => d.domain === domainName);
+            if (domainData && domainData.id) {
+                console.log('[Addy] Found domain ID:', domainData.id);
+                return domainData.id;
+            }
+        }
+
+        console.log('[Addy] Domain ID not found for:', domainName);
+        return null;
+    } catch (error) {
+        console.error('[Addy] Error fetching domain ID:', error);
+        return null;
+    }
+};
