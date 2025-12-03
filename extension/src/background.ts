@@ -36,11 +36,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 customRule: customRule
             });
 
-            // Send message to content script to insert alias
-            chrome.tabs.sendMessage(tab.id, {
+            const message = {
                 action: "insertAlias",
                 alias: alias
-            });
+            };
+
+            // Send message to content script to insert alias
+            if (typeof info.frameId === 'number') {
+                chrome.tabs.sendMessage(tab.id, message, { frameId: info.frameId });
+            } else {
+                chrome.tabs.sendMessage(tab.id, message);
+            }
 
         } catch (error) {
             console.error("Error generating alias from context menu:", error);

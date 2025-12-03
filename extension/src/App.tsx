@@ -116,7 +116,7 @@ function App() {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab.id) {
           chrome.scripting.executeScript({
-            target: { tabId: tab.id },
+            target: { tabId: tab.id, allFrames: true },
             func: (email) => {
               // Try to find the active element first
               let activeElement = document.activeElement as HTMLInputElement;

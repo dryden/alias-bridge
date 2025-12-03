@@ -40,7 +40,8 @@
             ],
             "js": [
                 "src/content.ts"
-            ]
+            ],
+            "all_frames": true
         }
     ],
     "permissions": [
