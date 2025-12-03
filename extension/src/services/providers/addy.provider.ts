@@ -63,7 +63,7 @@ export class AddyProvider implements AliasProvider {
                 console.error('[Addy.io] Failed to find domain ID for custom domain:', domain);
                 return {
                     success: false,
-                    error: `Domain not found: ${domain}`
+                    error: `Unable to find domain ID for "${domain}". Please check that this domain is properly configured in your Addy account.`
                 };
             }
 
@@ -88,15 +88,30 @@ export class AddyProvider implements AliasProvider {
             console.log('[Addy.io] Create response:', response.status, responseData);
 
             if (response.ok) {
+                console.log('[Addy.io] ✓ Alias successfully created');
                 return { success: true };
             }
 
+            // Handle specific 422 errors
             if (response.status === 422) {
-                // Check if it's an alias already exists error (common for 422)
                 const errorMessage = responseData.message?.toLowerCase() || '';
+                const errors = responseData.errors || {};
+
+                console.log('[Addy.io] 422 Error details:', { message: responseData.message, errors });
+
+                // Check if it's an "alias already exists" error
                 if (errorMessage.includes('alias') || errorMessage.includes('exists')) {
                     console.log('[Addy.io] Alias already exists (422)');
                     return { success: true };
+                }
+
+                // If it's a domain field error, it means our domain_id was wrong
+                if (errors.domain || errorMessage.includes('domain')) {
+                    console.error('[Addy.io] Domain field error - domain_id may be invalid');
+                    return {
+                        success: false,
+                        error: `Domain configuration error: ${responseData.message || 'The domain ID could not be applied'}`
+                    };
                 }
             }
 

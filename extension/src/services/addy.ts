@@ -193,11 +193,17 @@ export const getDomainId = async (token: string, domainName: string): Promise<nu
         const domainsRes = await fetch(`${BASE_URL}/domains`, { headers });
         if (domainsRes.ok) {
             const domainsData = await domainsRes.json();
+            console.log('[Addy] getDomainId - All domains fetched:', domainsData.data?.map((d: any) => ({ id: d.id, domain: d.domain })));
+
             const domainData = domainsData.data?.find((d: any) => d.domain === domainName);
             if (domainData && domainData.id) {
-                console.log('[Addy] Found domain ID:', domainData.id);
+                console.log('[Addy] Found domain ID:', { domain: domainName, id: domainData.id });
                 return domainData.id;
+            } else {
+                console.log('[Addy] getDomainId - Domain not found in list:', { searchingFor: domainName, availableDomains: domainsData.data?.map((d: any) => d.domain) });
             }
+        } else {
+            console.error('[Addy] getDomainId - Failed to fetch domains:', domainsRes.status, domainsRes.statusText);
         }
 
         console.log('[Addy] Domain ID not found for:', domainName);

@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Improve Addy API error handling and add processing UI feedback\n\nThis commit addresses two issues:\n\n1. Fixed Addy.io API integration:\n   - Added getDomainId() function to fetch the correct domain ID from Addy API\n   - createAlias() now properly uses domain_id instead of domain name\n   - Added isCatchAllDomain flag to distinguish catch-all aliases from real API errors\n   - Only allows skipping error handling for actual catch-all domains, not for API failures\n\n2. Added UI feedback for processing:\n   - New isProcessing and processingStep state variables\n   - Copy & Fill button shows \"Processing...\" with spinner while executing\n   - Both buttons are disabled during processing\n   - Status message displays current step (Creating alias on server, Copying to clipboard, Filling email field)\n   - Updated error handling to properly throw on real failures (non catch-all domains)\n\nThis ensures users see clear feedback when the extension is working, and real API errors are properly reported instead of silently continuing.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
