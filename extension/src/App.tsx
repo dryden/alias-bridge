@@ -76,60 +76,96 @@ function App() {
 
   const handleCopyAndFill = async () => {
     try {
-      // Create alias on server if needed (SimpleLogin)
-      if (providerConfig && providerConfig.id === 'simplelogin') {
-        const provider = providerRegistry.get(providerConfig.id);
-        if (provider && provider.createAlias) {
-          const result = await provider.createAlias(generatedAlias, providerConfig.token);
-          if (!result.success) {
-            console.error('Failed to create alias on SimpleLogin:', result.error);
-            // Continue anyway - the alias might already exist or user can create it manually
+      console.log('========== Alias Bridge: Copy & Fill Started ==========');
+      console.log('Generated Alias:', generatedAlias);
+      console.log('Provider ID:', providerConfig?.id);
+      console.log('Wait Server Confirmation:', providerConfig?.waitServerConfirmation);
+
+      // Create alias on server if needed (Addy or SimpleLogin with waitServerConfirmation enabled)
+      if (providerConfig) {
+        const shouldWaitServerConfirmation = providerConfig.id === 'simplelogin' || providerConfig.waitServerConfirmation === true;
+
+        if (shouldWaitServerConfirmation) {
+          console.log('[Step 1/3] Server Confirmation Required');
+          console.log('  - Provider:', providerConfig.id);
+          console.log('  - Creating alias on server...');
+
+          const provider = providerRegistry.get(providerConfig.id);
+          if (provider && provider.createAlias) {
+            const result = await provider.createAlias(generatedAlias, providerConfig.token);
+            if (result.success) {
+              console.log('  ✓ Alias successfully created on server');
+            } else {
+              console.error('  ✗ Failed to create alias on server:', result.error);
+              // For Addy, still continue - it might be a catch_all alias
+              if (providerConfig.id !== 'addy') {
+                throw new Error(`Failed to create alias: ${result.error}`);
+              }
+            }
           }
+        } else {
+          console.log('[Step 1/3] No Server Confirmation Required');
+          console.log('  - waitServerConfirmation is disabled for Addy');
         }
       }
 
-      await navigator.clipboard.writeText(generatedAlias)
+      console.log('[Step 2/3] Copying to clipboard');
+      await navigator.clipboard.writeText(generatedAlias);
+      console.log('  ✓ Alias copied to clipboard');
 
+      console.log('[Step 3/3] Filling email input field');
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab.id) {
           chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             func: (email) => {
+              console.log('  - Looking for email input field...');
               let activeElement = document.activeElement as HTMLInputElement;
               if (!activeElement || activeElement === document.body || (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA')) {
                 const emailInput = document.querySelector('input[type="email"]');
                 if (emailInput) {
                   activeElement = emailInput as HTMLInputElement;
+                  console.log('  - Found email input field');
                 } else {
                   const firstInput = document.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"])');
                   if (firstInput) {
                     activeElement = firstInput as HTMLInputElement;
+                    console.log('  - Found first input field (fallback)');
+                  } else {
+                    console.log('  ✗ No input field found on page');
                   }
                 }
               }
 
               if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-                activeElement.value = email;
+                console.log('  - Setting value to:', email);
+                (activeElement as HTMLInputElement).value = email;
                 activeElement.dispatchEvent(new Event('input', { bubbles: true }));
                 activeElement.dispatchEvent(new Event('change', { bubbles: true }));
                 activeElement.focus();
+                console.log('  ✓ Email filled and field focused');
               }
             },
             args: [generatedAlias]
           });
         }
       }
+
+      console.log('========== Alias Bridge: Copy & Fill Completed Successfully ==========');
     } catch (err) {
-      console.error('Failed to copy', err)
+      console.error('========== Alias Bridge: Copy & Fill Failed ==========');
+      console.error('Error:', err)
     }
   }
 
   // Load initial state
   useEffect(() => {
     const init = async () => {
-      // Load settings
+      console.log('[App] Initializing popup page, loading latest config from storage')
+      // Load settings - always reload to get latest from storage
       const enabled = await providerService.getEnabledProviders()
+      console.log('[App] Loaded enabled providers:', enabled)
       setProviders(enabled)
 
       if (enabled.length > 0) {
@@ -139,6 +175,7 @@ function App() {
           ? defaultProvider
           : enabled[0]
 
+        console.log('[App] Initial provider config:', initial)
         setSelectedProviderId(initial.id)
         setProviderConfig(initial)
         setActiveTab(initial.activeFormat || 'uuid')
@@ -170,6 +207,29 @@ function App() {
     }
     init()
   }, [])
+
+  // Listen for storage changes to update provider config when settings change
+  useEffect(() => {
+    const handleStorageChange = async () => {
+      console.log('[App] Storage changed, reloading provider config...')
+      const enabled = await providerService.getEnabledProviders()
+      setProviders(enabled)
+      if (selectedProviderId) {
+        const updated = enabled.find(p => p.id === selectedProviderId)
+        if (updated) {
+          setProviderConfig(updated)
+          console.log('[App] Provider config updated:', updated)
+        }
+      }
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.onChanged.addListener(handleStorageChange)
+      return () => {
+        chrome.storage.local.onChanged.removeListener(handleStorageChange)
+      }
+    }
+  }, [selectedProviderId])
 
   // Generate alias when dependencies change
   useEffect(() => {

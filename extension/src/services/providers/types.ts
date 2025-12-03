@@ -14,6 +14,7 @@ export interface ProviderConfig {
     defaultDomain?: string;
     activeFormat?: string; // 'uuid', 'random', 'domain', 'custom'
     customRule?: CustomRule;
+    waitServerConfirmation?: boolean; // Wait for server confirmation before applying email to field
 }
 
 export interface CustomRule {

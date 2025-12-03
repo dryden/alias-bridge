@@ -94,7 +94,7 @@ export class SimpleLoginProvider implements AliasProvider {
 
     async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string }> {
         try {
-            console.log('SimpleLogin: Creating alias:', alias);
+            console.log('[SimpleLogin] Creating alias on server:', alias);
 
             // Parse the alias - check if it's a suffix (contains @ before the final domain)
             // e.g., "localpart.suffix@domain.com" where ".suffix@domain.com" is the full suffix
@@ -106,7 +106,7 @@ export class SimpleLoginProvider implements AliasProvider {
             const localPart = alias.substring(0, atIndex);
             const domainPart = alias.substring(atIndex + 1);
 
-            console.log('SimpleLogin: Parsed -', { localPart, domainPart, fullAlias: alias });
+            console.log('[SimpleLogin] Parsed -', { localPart, domainPart, fullAlias: alias });
 
             // First, get mailboxes
             const mailboxesRes = await fetch(`${BASE_URL}/v2/mailboxes`, {
@@ -115,12 +115,12 @@ export class SimpleLoginProvider implements AliasProvider {
 
             if (!mailboxesRes.ok) {
                 const errorText = await mailboxesRes.text();
-                console.error('SimpleLogin: Failed to fetch mailboxes:', errorText);
+                console.error('[SimpleLogin] Failed to fetch mailboxes:', errorText);
                 return { success: false, error: `Failed to fetch mailboxes: ${errorText}` };
             }
 
             const mailboxesData = await mailboxesRes.json();
-            console.log('SimpleLogin: Mailboxes:', mailboxesData);
+            console.log('[SimpleLogin] Mailboxes fetched:', mailboxesData);
 
             if (!mailboxesData.mailboxes || mailboxesData.mailboxes.length === 0) {
                 return { success: false, error: 'No mailboxes found' };
@@ -129,19 +129,19 @@ export class SimpleLoginProvider implements AliasProvider {
             const mailboxId = mailboxesData.mailboxes[0].id;
 
             // Get alias options to check available suffixes
-            console.log('SimpleLogin: Getting alias options...');
+            console.log('[SimpleLogin] Fetching alias options...');
             const optionsRes = await fetch(`${BASE_URL}/v5/alias/options`, {
                 headers: { 'Authentication': token }
             });
 
             if (!optionsRes.ok) {
                 const errorText = await optionsRes.text();
-                console.error('SimpleLogin: Failed to get options:', errorText);
+                console.error('[SimpleLogin] Failed to get options:', errorText);
                 return { success: false, error: `Failed to get options: ${errorText}` };
             }
 
             const optionsData = await optionsRes.json();
-            console.log('SimpleLogin: Options:', optionsData);
+            console.log('[SimpleLogin] Options fetched, found', optionsData.suffixes?.length || 0, 'suffixes');
 
             // Check if this is a suffix-based alias
             // Suffixes look like: [".word@domain.com", "@domain.com", etc]
@@ -156,6 +156,8 @@ export class SimpleLoginProvider implements AliasProvider {
                 // This is a suffix-based alias
                 const suffixStr = typeof matchingSuffix === 'string' ? matchingSuffix : matchingSuffix.suffix;
                 const signedSuffix = typeof matchingSuffix === 'string' ? matchingSuffix : matchingSuffix.signed_suffix;
+
+                console.log('[SimpleLogin] Using suffix-based alias:', { suffixStr, signedSuffix });
 
                 // The prefix is everything before the suffix
                 // For ".word@domain.com" suffix and "myalias.word@domain.com" alias, prefix is "myalias"
@@ -184,7 +186,7 @@ export class SimpleLoginProvider implements AliasProvider {
                 // Remove leading/trailing underscores
                 prefix = prefix.replace(/^_+|_+$/g, '');
 
-                console.log('SimpleLogin: Creating with signed suffix:', { prefix, signedSuffix, suffixStr });
+                console.log('[SimpleLogin] Creating with cleaned prefix:', { prefix, signedSuffix, suffixStr });
 
                 // Create alias with suffix
                 const response = await fetch(`${BASE_URL}/v3/alias/custom/new`, {
@@ -202,20 +204,23 @@ export class SimpleLoginProvider implements AliasProvider {
                 });
 
                 const responseText = await response.text();
-                console.log('SimpleLogin: Create response:', response.status, responseText);
+                console.log('[SimpleLogin] Create response:', response.status, responseText);
 
                 if (response.ok) {
+                    console.log('[SimpleLogin] ✓ Alias successfully created');
                     return { success: true };
                 }
 
                 if (response.status === 409) {
+                    console.log('[SimpleLogin] ✓ Alias already exists (409)');
                     return { success: true }; // Already exists
                 }
 
+                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseText);
                 return { success: false, error: `${response.status}: ${responseText}` };
             } else {
                 // For custom domains, use the full alias
-                console.log('SimpleLogin: Creating custom domain alias:', alias);
+                console.log('[SimpleLogin] Creating custom domain alias:', alias);
 
                 const response = await fetch(`${BASE_URL}/v2/alias/custom/new`, {
                     method: 'POST',
@@ -231,20 +236,23 @@ export class SimpleLoginProvider implements AliasProvider {
                 });
 
                 const responseText = await response.text();
-                console.log('SimpleLogin: Create response:', response.status, responseText);
+                console.log('[SimpleLogin] Create response:', response.status, responseText);
 
                 if (response.ok) {
+                    console.log('[SimpleLogin] ✓ Alias successfully created');
                     return { success: true };
                 }
 
                 if (response.status === 409) {
+                    console.log('[SimpleLogin] ✓ Alias already exists (409)');
                     return { success: true }; // Already exists
                 }
 
+                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseText);
                 return { success: false, error: `${response.status}: ${responseText}` };
             }
         } catch (e) {
-            console.error('SimpleLogin: Exception creating alias:', e);
+            console.error('[SimpleLogin] ✗ Exception creating alias:', e);
             return { success: false, error: String(e) };
         }
     }

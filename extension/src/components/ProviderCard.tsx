@@ -5,11 +5,12 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { Checkbox } from './ui/checkbox';
-import { Eye, EyeOff, Check, ChevronDown, Fingerprint, Shuffle, Globe, PenTool, Key } from 'lucide-react';
+import { Eye, EyeOff, Check, ChevronDown, Fingerprint, Shuffle, Globe, PenTool, Key, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { providerService } from '../services/providers/provider.service';
 import { providerRegistry } from '../services/providers/registry';
 import type { ProviderConfig, CustomRule } from '../services/providers/types';
+import { SHARED_DOMAINS, getDomainDetails as fetchDomainDetails } from '../services/addy';
 
 interface ProviderCardProps {
     providerId: string;
@@ -48,10 +49,69 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
 
     const [expandedSection, setExpandedSection] = useState<'domain' | 'format' | null>(null);
     const [previewCustomSettings, setPreviewCustomSettings] = useState(false);
+    const [isWaitServerConfirmationDisabled, setIsWaitServerConfirmationDisabled] = useState(false);
+    const [isRefreshingDomains, setIsRefreshingDomains] = useState(false);
 
     useEffect(() => {
         loadConfig();
     }, [providerId]);
+
+    // Monitor default domain changes and check catch_all status for Addy
+    useEffect(() => {
+        if (providerId === 'simplelogin') {
+            // SimpleLogin always requires server confirmation
+            setIsWaitServerConfirmationDisabled(true);
+        } else if (providerId === 'addy' && config?.defaultDomain && token) {
+            // Check if the selected domain has catch_all disabled
+            checkDomainCatchAllStatus(config.defaultDomain);
+        }
+    }, [config?.defaultDomain, providerId, token]);
+
+    const checkDomainCatchAllStatus = async (domain: string) => {
+        console.log('[ProviderCard] Checking catch_all status for domain:', domain);
+        console.log('[ProviderCard] Token available:', !!token);
+        try {
+            const details = await fetchDomainDetails(token, domain);
+            console.log('[ProviderCard] fetchDomainDetails returned:', details);
+            if (details) {
+                console.log('[ProviderCard] Domain details:', details);
+                console.log('[ProviderCard] catch_all value:', details.catch_all);
+                const shouldDisable = !details.catch_all;
+                console.log('[ProviderCard] Setting isWaitServerConfirmationDisabled to:', shouldDisable);
+                // If catch_all is false, disable the checkbox and force save waitServerConfirmation: true
+                setIsWaitServerConfirmationDisabled(shouldDisable);
+                if (shouldDisable) {
+                    console.log('[ProviderCard] Auto-saving waitServerConfirmation: true due to catch_all=false');
+                    await updateConfig({ waitServerConfirmation: true });
+                } else {
+                    console.log('[ProviderCard] Auto-saving waitServerConfirmation: false (domain has catch_all=true)');
+                    await updateConfig({ waitServerConfirmation: false });
+                }
+            } else {
+                console.log('[ProviderCard] No details returned for domain:', domain);
+                setIsWaitServerConfirmationDisabled(false);
+            }
+        } catch (error) {
+            console.error('[ProviderCard] Error checking catch_all status:', error);
+            setIsWaitServerConfirmationDisabled(false);
+        }
+    };
+
+    const handleRefreshDomains = async () => {
+        setIsRefreshingDomains(true);
+        try {
+            console.log('[ProviderCard] Refreshing domains...');
+            await fetchDomains(token);
+            console.log('[ProviderCard] Domains refreshed. Available domains:', availableDomains);
+            // After refreshing domains, re-check the catch_all status for current domain
+            if (config?.defaultDomain && providerId === 'addy') {
+                console.log('[ProviderCard] Re-checking catch_all status for:', config.defaultDomain);
+                await checkDomainCatchAllStatus(config.defaultDomain);
+            }
+        } finally {
+            setIsRefreshingDomains(false);
+        }
+    };
 
     const loadConfig = async () => {
         const settings = await providerService.getSettings();
@@ -71,14 +131,13 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
     const fetchDomains = async (apiToken: string) => {
         const domains = await providerService.getProviderDomains(providerId, apiToken);
         if (domains && domains.length > 0) {
-            // Filter logic if needed (e.g. for Addy)
-            const filtered = domains.filter((d: string) => d !== 'anonaddy.com' && d !== 'addy.io');
-            setAvailableDomains(filtered);
+            // No filtering needed anymore, we handle grouping in render
+            setAvailableDomains(domains);
 
             // If default domain is not set or invalid, set it
-            if (config && (!config.defaultDomain || !filtered.includes(config.defaultDomain))) {
-                if (filtered.length > 0) {
-                    updateConfig({ defaultDomain: filtered[0] });
+            if (config && (!config.defaultDomain || !domains.includes(config.defaultDomain))) {
+                if (domains.length > 0) {
+                    updateConfig({ defaultDomain: domains[0] });
                 }
             }
         }
@@ -283,35 +342,154 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
 
                         {/* Default Domain */}
                         <div className="flex flex-col">
-                            <button
-                                onClick={() => toggleSection('domain')}
-                                className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors text-left"
-                            >
-                                <span className="text-sm font-medium text-slate-200">Default Domain</span>
-                                <div className="flex items-center gap-2 text-slate-500">
-                                    <span className="text-sm">{config.defaultDomain || 'Select...'}</span>
-                                    <ChevronDown className={cn("w-4 h-4 transition-transform", expandedSection === 'domain' && "rotate-180")} />
-                                </div>
-                            </button>
+                            <div className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors text-left group">
+                                <button
+                                    onClick={() => toggleSection('domain')}
+                                    className="flex-1 flex items-center justify-between"
+                                >
+                                    <span className="text-sm font-medium text-slate-200">Default Domain</span>
+                                    <div className="flex items-center gap-2 text-slate-500">
+                                        <span className="text-sm">{config.defaultDomain || 'Select...'}</span>
+                                        <ChevronDown className={cn("w-4 h-4 transition-transform", expandedSection === 'domain' && "rotate-180")} />
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={handleRefreshDomains}
+                                    disabled={isRefreshingDomains}
+                                    className={cn(
+                                        "ml-2 p-1.5 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors",
+                                        isRefreshingDomains && "opacity-50 cursor-not-allowed"
+                                    )}
+                                    title="Refresh domains and catch-all settings"
+                                >
+                                    <RefreshCw className={cn("w-4 h-4", isRefreshingDomains && "animate-spin")} />
+                                </button>
+                            </div>
                             {expandedSection === 'domain' && (
                                 <div className="bg-slate-950/50 border-t border-slate-800/50 max-h-60 overflow-y-auto custom-scrollbar">
-                                    {availableDomains.map((domain) => (
-                                        <button
-                                            key={domain}
-                                            onClick={() => {
-                                                updateConfig({ defaultDomain: domain });
-                                                setExpandedSection(null);
-                                            }}
-                                            className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-500/10 transition-colors text-left group border-b border-slate-800/30 last:border-0"
-                                        >
-                                            <span className={cn("text-sm", config.defaultDomain === domain ? "text-blue-400 font-medium" : "text-slate-300")}>
-                                                {domain}
-                                            </span>
-                                            {config.defaultDomain === domain && <Check className="w-4 h-4 text-blue-500" />}
-                                        </button>
-                                    ))}
+                                    {providerId === 'addy' ? (
+                                        <>
+                                            {/* Recommended Group */}
+                                            <div className="px-4 py-2 text-xs font-bold text-slate-400 bg-slate-900/95 sticky top-0 backdrop-blur-sm z-10">
+                                                Recommended
+                                            </div>
+                                            {availableDomains.filter(d => !SHARED_DOMAINS.includes(d)).map((domain) => (
+                                                <button
+                                                    key={domain}
+                                                    onClick={() => {
+                                                        updateConfig({ defaultDomain: domain });
+                                                        setExpandedSection(null);
+                                                    }}
+                                                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-500/10 transition-colors text-left group border-b border-slate-800/30 last:border-0"
+                                                >
+                                                    <span className={cn("text-sm", config.defaultDomain === domain ? "text-blue-400 font-medium" : "text-slate-300")}>
+                                                        {domain}
+                                                    </span>
+                                                    {config.defaultDomain === domain && <Check className="w-4 h-4 text-blue-500" />}
+                                                </button>
+                                            ))}
+
+                                            {/* Optional Group */}
+                                            <div className="px-4 py-2 text-xs font-bold text-slate-400 bg-slate-900/95 sticky top-0 backdrop-blur-sm z-10 border-t border-slate-800/50">
+                                                Optional
+                                            </div>
+                                            {availableDomains.filter(d => SHARED_DOMAINS.includes(d)).map((domain) => (
+                                                <button
+                                                    key={domain}
+                                                    onClick={() => {
+                                                        updateConfig({ defaultDomain: domain });
+                                                        setExpandedSection(null);
+                                                    }}
+                                                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-500/10 transition-colors text-left group border-b border-slate-800/30 last:border-0"
+                                                >
+                                                    <span className={cn("text-sm", config.defaultDomain === domain ? "text-blue-400 font-medium" : "text-slate-300")}>
+                                                        {domain}
+                                                    </span>
+                                                    {config.defaultDomain === domain && <Check className="w-4 h-4 text-blue-500" />}
+                                                </button>
+                                            ))}
+                                        </>
+                                    ) : (
+                                        availableDomains.map((domain) => (
+                                            <button
+                                                key={domain}
+                                                onClick={() => {
+                                                    updateConfig({ defaultDomain: domain });
+                                                    setExpandedSection(null);
+                                                }}
+                                                className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-500/10 transition-colors text-left group border-b border-slate-800/30 last:border-0"
+                                            >
+                                                <span className={cn("text-sm", config.defaultDomain === domain ? "text-blue-400 font-medium" : "text-slate-300")}>
+                                                    {domain}
+                                                </span>
+                                                {config.defaultDomain === domain && <Check className="w-4 h-4 text-blue-500" />}
+                                            </button>
+                                        ))
+                                    )}
                                 </div>
                             )}
+                        </div>
+
+                        {/* Wait for Server Confirmation Option */}
+                        <div className={cn("px-4 py-4 space-y-2 border-t border-slate-800", isWaitServerConfirmationDisabled && "opacity-75 bg-slate-950/30")}>
+                            <div className="flex items-start gap-3">
+                                <div className="relative mt-1">
+                                    <Checkbox
+                                        id={`wait-confirm-${providerId}`}
+                                        checked={isWaitServerConfirmationDisabled ? true : (config.waitServerConfirmation === true)}
+                                        onCheckedChange={(checked) => {
+                                            if (!isWaitServerConfirmationDisabled) {
+                                                updateConfig({ waitServerConfirmation: !!checked });
+                                            }
+                                        }}
+                                        disabled={isWaitServerConfirmationDisabled}
+                                        className={cn(
+                                            "border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600",
+                                            isWaitServerConfirmationDisabled && "cursor-not-allowed opacity-50"
+                                        )}
+                                    />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <Label
+                                        htmlFor={`wait-confirm-${providerId}`}
+                                        className={cn(
+                                            "text-sm font-medium cursor-pointer inline-flex items-center gap-2",
+                                            isWaitServerConfirmationDisabled ? "text-slate-400" : "text-slate-200"
+                                        )}
+                                    >
+                                        Wait for server confirmation before applying email
+                                        {isWaitServerConfirmationDisabled && (
+                                            <span className="text-xs text-slate-500">(locked)</span>
+                                        )}
+                                    </Label>
+                                    <div className="mt-2 space-y-2 text-xs text-slate-400">
+                                        {providerId === 'addy' ? (
+                                            <>
+                                                <p>
+                                                    <span className="text-slate-300">If unchecked (recommended):</span> The email will be created on the server and can be quickly generated and applied. Addy will create the email in the list after actually receiving the mail.
+                                                </p>
+                                                <p>
+                                                    <span className="text-slate-300">If checked:</span> The email will be created in the Addy list at the same time it is generated.
+                                                </p>
+                                                {isWaitServerConfirmationDisabled && (
+                                                    <p>
+                                                        <span className="text-amber-400">⚠️ This option is locked:</span> The selected domain has the catch-all feature disabled, so the server confirmation is required.
+                                                    </p>
+                                                )}
+                                                {!isWaitServerConfirmationDisabled && (
+                                                    <p>
+                                                        <span className="text-slate-300">Note:</span> If you disable the catch-all feature in Addy or create a Shared Domain Alias, this option will be automatically locked to enabled.
+                                                    </p>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <p>
+                                                <span className="text-slate-300">Note:</span> Due to SimpleLogin's mechanism, this option is always enabled and cannot be disabled.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Alias Format */}
@@ -495,6 +673,6 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                     </div>
                 )}
             </CardContent>
-        </Card>
+        </Card >
     );
 }
