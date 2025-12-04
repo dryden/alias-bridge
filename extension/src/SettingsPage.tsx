@@ -12,6 +12,7 @@ import confetti from 'canvas-confetti'
 import { ProviderCard } from './components/ProviderCard'
 import { providerService } from './services/providers/provider.service'
 import { migrateLegacyStorage } from './services/migration'
+import packageJson from '../package.json'
 
 
 
@@ -255,7 +256,7 @@ function SettingsPage() {
                     <Card className="bg-slate-900 border-slate-800 overflow-hidden divide-y divide-slate-800">
                         <div className="p-4 flex items-center justify-between">
                             <span className="text-sm font-medium text-slate-200">Version</span>
-                            <span className="text-sm text-slate-500">1.0.0 (1)</span>
+                            <span className="text-sm text-slate-500">{packageJson.version}</span>
                         </div>
                         <a href="#" className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors text-left group">
                             <span className="text-sm font-medium text-slate-200">Send Feedback</span>
