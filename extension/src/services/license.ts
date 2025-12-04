@@ -1,3 +1,4 @@
+import { logger } from './logger';
 
 export interface LicenseResponse {
     valid: boolean;
@@ -49,7 +50,7 @@ export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error('Polar API Error:', response.status, JSON.stringify(errorData));
+            logger.error('license', 'Polar API Error:', response.status, JSON.stringify(errorData));
 
             if (response.status === 404) {
                 return { valid: false, error: 'License key not found' };
@@ -72,7 +73,7 @@ export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
         return { valid: false, error: 'Invalid license' };
 
     } catch (error) {
-        console.error('License verification failed:', error);
+        logger.error('license', 'License verification failed:', error);
         return { valid: false, error: 'Verification failed' };
     }
 };

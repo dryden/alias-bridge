@@ -12,6 +12,7 @@ import confetti from 'canvas-confetti'
 import { ProviderCard } from './components/ProviderCard'
 import { providerService } from './services/providers/provider.service'
 import { migrateLegacyStorage } from './services/migration'
+import { logger } from './services/logger'
 import packageJson from '../package.json'
 
 
@@ -37,7 +38,7 @@ function SettingsPage() {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                 chrome.storage.local.get(['licenseKey', 'isPro'], (result) => {
                     if (chrome.runtime.lastError) {
-                        console.error('Failed to load license from storage:', chrome.runtime.lastError)
+                        logger.error('SettingsPage', 'Failed to load license from storage:', chrome.runtime.lastError)
                         return
                     }
                     if (result.licenseKey) {
@@ -55,7 +56,7 @@ function SettingsPage() {
                         if (localStorage.getItem('isPro') === 'true') setLicenseStatus('valid')
                     }
                 } catch (error) {
-                    console.error('Failed to load license from localStorage:', error)
+                    logger.error('SettingsPage', 'Failed to load license from localStorage:', error)
                 }
             }
         }
@@ -258,12 +259,8 @@ function SettingsPage() {
                             <span className="text-sm font-medium text-slate-200">Version</span>
                             <span className="text-sm text-slate-500">{packageJson.version}</span>
                         </div>
-                        <a href="#" className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors text-left group">
+                        <a href="https://aliasbridge.userjot.com/?cursor=1&order=top&limit=10" target="_blank" className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors text-left group">
                             <span className="text-sm font-medium text-slate-200">Send Feedback</span>
-                            <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
-                        </a>
-                        <a href="https://github.com/dryden/alias-bridge" target="_blank" className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors text-left group">
-                            <span className="text-sm font-medium text-slate-200">View on GitHub</span>
                             <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
                         </a>
                     </Card>

@@ -1,4 +1,5 @@
 import type { AliasProvider } from './types';
+import { logger } from '../logger';
 
 const BASE_URL = 'https://app.simplelogin.io/api';
 
@@ -40,7 +41,7 @@ export class SimpleLoginProvider implements AliasProvider {
                     }
                 }
             } catch (e) {
-                console.warn('Failed to fetch custom domains', e);
+                logger.warn('simplelogin.provider', 'Failed to fetch custom domains', e);
             }
 
             // 2. Get Alias Options (for shared domains/suffixes)
@@ -56,14 +57,14 @@ export class SimpleLoginProvider implements AliasProvider {
                     }
                 }
             } catch (e) {
-                console.warn('Failed to fetch alias options', e);
+                logger.warn('simplelogin.provider', 'Failed to fetch alias options', e);
             }
 
             // Remove duplicates
             return Array.from(new Set(domains));
 
         } catch (error) {
-            console.error('Failed to fetch SimpleLogin domains', error);
+            logger.error('simplelogin.provider', 'Failed to fetch SimpleLogin domains', error);
             return [];
         }
     }
@@ -94,7 +95,7 @@ export class SimpleLoginProvider implements AliasProvider {
 
     async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
-            console.log('[SimpleLogin] Creating alias on server:', alias);
+            logger.debug('simplelogin.provider', 'Creating alias on server:', alias);
 
             // Parse the alias - check if it's a suffix (contains @ before the final domain)
             // e.g., "localpart.suffix@domain.com" where ".suffix@domain.com" is the full suffix
@@ -106,7 +107,7 @@ export class SimpleLoginProvider implements AliasProvider {
             const localPart = alias.substring(0, atIndex);
             const domainPart = alias.substring(atIndex + 1);
 
-            console.log('[SimpleLogin] Parsed -', { localPart, domainPart, fullAlias: alias });
+            logger.debug('simplelogin.provider', 'Parsed -', { localPart, domainPart, fullAlias: alias });
 
             // First, get mailboxes
             const mailboxesRes = await fetch(`${BASE_URL}/v2/mailboxes`, {
@@ -115,12 +116,12 @@ export class SimpleLoginProvider implements AliasProvider {
 
             if (!mailboxesRes.ok) {
                 const errorText = await mailboxesRes.text();
-                console.error('[SimpleLogin] Failed to fetch mailboxes:', errorText);
+                logger.error('simplelogin.provider', 'Failed to fetch mailboxes:', errorText);
                 return { success: false, error: `Failed to fetch mailboxes: ${errorText}` };
             }
 
             const mailboxesData = await mailboxesRes.json();
-            console.log('[SimpleLogin] Mailboxes fetched:', mailboxesData);
+            logger.debug('simplelogin.provider', 'Mailboxes fetched:', mailboxesData);
 
             if (!mailboxesData.mailboxes || mailboxesData.mailboxes.length === 0) {
                 return { success: false, error: 'No mailboxes found' };
@@ -129,19 +130,19 @@ export class SimpleLoginProvider implements AliasProvider {
             const mailboxId = mailboxesData.mailboxes[0].id;
 
             // Get alias options to check available suffixes
-            console.log('[SimpleLogin] Fetching alias options...');
+            logger.debug('simplelogin.provider', 'Fetching alias options...');
             const optionsRes = await fetch(`${BASE_URL}/v5/alias/options`, {
                 headers: { 'Authentication': token }
             });
 
             if (!optionsRes.ok) {
                 const errorText = await optionsRes.text();
-                console.error('[SimpleLogin] Failed to get options:', errorText);
+                logger.error('simplelogin.provider', 'Failed to get options:', errorText);
                 return { success: false, error: `Failed to get options: ${errorText}` };
             }
 
             const optionsData = await optionsRes.json();
-            console.log('[SimpleLogin] Options fetched, found', optionsData.suffixes?.length || 0, 'suffixes');
+            logger.debug('simplelogin.provider', 'Options fetched, found', optionsData.suffixes?.length || 0, 'suffixes');
 
             // Check if this is a suffix-based alias
             // Suffixes look like: [".word@domain.com", "@domain.com", etc]
@@ -157,7 +158,7 @@ export class SimpleLoginProvider implements AliasProvider {
                 const suffixStr = typeof matchingSuffix === 'string' ? matchingSuffix : matchingSuffix.suffix;
                 const signedSuffix = typeof matchingSuffix === 'string' ? matchingSuffix : matchingSuffix.signed_suffix;
 
-                console.log('[SimpleLogin] Using suffix-based alias:', { suffixStr, signedSuffix });
+                logger.debug('simplelogin.provider', 'Using suffix-based alias:', { suffixStr, signedSuffix });
 
                 // The prefix is everything before the suffix
                 // For ".word@domain.com" suffix and "myalias.word@domain.com" alias, prefix is "myalias"
@@ -186,7 +187,7 @@ export class SimpleLoginProvider implements AliasProvider {
                 // Remove leading/trailing underscores
                 prefix = prefix.replace(/^_+|_+$/g, '');
 
-                console.log('[SimpleLogin] Creating with cleaned prefix:', { prefix, signedSuffix, suffixStr });
+                logger.debug('simplelogin.provider', 'Creating with cleaned prefix:', { prefix, signedSuffix, suffixStr });
 
                 // Create alias with suffix
                 const response = await fetch(`${BASE_URL}/v3/alias/custom/new`, {
@@ -204,23 +205,23 @@ export class SimpleLoginProvider implements AliasProvider {
                 });
 
                 const responseData = await response.json();
-                console.log('[SimpleLogin] Create response:', response.status, responseData);
+                logger.debug('simplelogin.provider', 'Create response:', response.status, responseData);
 
                 if (response.ok) {
-                    console.log('[SimpleLogin] ✓ Alias successfully created');
+                    logger.debug('simplelogin.provider', 'Alias successfully created');
                     return { success: true, createdAlias: responseData.alias };
                 }
 
                 if (response.status === 409) {
-                    console.log('[SimpleLogin] ✓ Alias already exists (409)');
+                    logger.debug('simplelogin.provider', 'Alias already exists (409)');
                     return { success: true, createdAlias: alias }; // Already exists, assume requested alias is valid
                 }
 
-                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseData);
+                logger.error('simplelogin.provider', 'Failed to create alias:', response.status, responseData);
                 return { success: false, error: `${response.status}: ${JSON.stringify(responseData)}` };
             } else {
                 // For custom domains, use the full alias
-                console.log('[SimpleLogin] Creating custom domain alias:', alias);
+                logger.debug('simplelogin.provider', 'Creating custom domain alias:', alias);
 
                 const response = await fetch(`${BASE_URL}/v2/alias/custom/new`, {
                     method: 'POST',
@@ -236,23 +237,23 @@ export class SimpleLoginProvider implements AliasProvider {
                 });
 
                 const responseData = await response.json();
-                console.log('[SimpleLogin] Create response:', response.status, responseData);
+                logger.debug('simplelogin.provider', 'Create response:', response.status, responseData);
 
                 if (response.ok) {
-                    console.log('[SimpleLogin] ✓ Alias successfully created');
+                    logger.debug('simplelogin.provider', 'Alias successfully created');
                     return { success: true, createdAlias: responseData.alias };
                 }
 
                 if (response.status === 409) {
-                    console.log('[SimpleLogin] ✓ Alias already exists (409)');
+                    logger.debug('simplelogin.provider', 'Alias already exists (409)');
                     return { success: true, createdAlias: alias }; // Already exists
                 }
 
-                console.error('[SimpleLogin] ✗ Failed to create alias:', response.status, responseData);
+                logger.error('simplelogin.provider', 'Failed to create alias:', response.status, responseData);
                 return { success: false, error: `${response.status}: ${JSON.stringify(responseData)}` };
             }
         } catch (e) {
-            console.error('[SimpleLogin] ✗ Exception creating alias:', e);
+            logger.error('simplelogin.provider', 'Exception creating alias:', e);
             return { success: false, error: String(e) };
         }
     }

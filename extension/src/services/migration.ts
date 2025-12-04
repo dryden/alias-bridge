@@ -1,3 +1,4 @@
+import { logger } from './logger';
 import { providerService } from './providers/provider.service';
 import type { ProviderConfig } from './providers/types';
 
@@ -17,7 +18,7 @@ export const migrateLegacyStorage = async () => {
 
             // Check if legacy data exists
             if (result.addyToken) {
-                console.log('Migrating legacy Addy.io settings...');
+                logger.debug('migration', 'Migrating legacy Addy.io settings...');
 
                 const addyConfig: ProviderConfig = {
                     id: 'addy',
@@ -30,7 +31,7 @@ export const migrateLegacyStorage = async () => {
                 await providerService.saveProviderConfig(addyConfig);
 
                 // We do NOT delete legacy keys yet for safety
-                console.log('Migration complete.');
+                logger.debug('migration', 'Migration complete.');
             }
 
             resolve();

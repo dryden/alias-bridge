@@ -6,6 +6,7 @@ import { providerRegistry } from './services/providers/registry'
 import type { ProviderConfig } from './services/providers/types'
 import { domainCacheService } from './services/domain-cache.service'
 import { checkAndUpdateCatchAllStatus } from './services/catchAll.helper'
+import { logger } from './services/logger'
 import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown, Check } from 'lucide-react'
 import { cn } from './lib/utils'
 import { groupDomainsByRoot } from './lib/domainGrouper'
@@ -47,12 +48,12 @@ function App() {
 
           if (!domains) {
             // Cache miss, fetch from provider
-            console.log('[App] Domain cache miss, fetching from provider')
+            logger.debug('App', 'Domain cache miss, fetching from provider')
             domains = await providerService.getProviderDomains(providerConfig.id, providerConfig.token)
             // Cache the result
             await domainCacheService.setCachedDomains(providerConfig.id, providerConfig.token, domains)
           } else {
-            console.log('[App] Domain cache hit, using cached domains')
+            logger.debug('App', 'Domain cache hit, using cached domains')
           }
 
           setAvailableDomains(domains)
@@ -66,10 +67,10 @@ function App() {
             const newConfig = { ...providerConfig, defaultDomain: newDefault }
             setProviderConfig(newConfig)
             await providerService.saveProviderConfig(newConfig)
-            console.log('[App] Auto-selected default domain:', newDefault)
+            logger.debug('App', 'Auto-selected default domain:', newDefault)
           }
         } catch (error) {
-          console.error('Failed to fetch domains:', error)
+          logger.error('App', 'Failed to fetch domains:', error)
           setAvailableDomains([])
         }
       } else {
@@ -99,9 +100,9 @@ function App() {
       // Reset catch-all status for current domain so it will be re-fetched on next alias generation
       setIsCatchAllEnabled(null)
 
-      console.log('[App] Domains refreshed:', domains.length)
+      logger.debug('App', 'Domains refreshed:', domains.length)
     } catch (error) {
-      console.error('Failed to refresh domains:', error)
+      logger.error('App', 'Failed to refresh domains:', error)
     } finally {
       setIsRefreshingDomains(false)
     }
@@ -112,7 +113,7 @@ function App() {
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.openOptionsPage) {
       chrome.runtime.openOptionsPage();
     } else {
-      console.log('Open Settings Page');
+      logger.debug('App', 'Open Settings Page');
     }
   }
 
@@ -133,39 +134,39 @@ function App() {
 
         if (isCatchAllEnabledValue === null) {
           // Cache miss, fetch from provider
-          console.log('[App] Catch-all status cache miss, fetching from provider')
+          logger.debug('App', 'Catch-all status cache miss, fetching from provider')
           const { getDomainDetails } = await import('./services/addy')
           const domainDetails = await getDomainDetails(providerConfig.token, defaultDomain)
-          console.log('[App] generateAlias - Domain details retrieved:', { domain: defaultDomain, details: domainDetails })
+          logger.debug('App', 'generateAlias - Domain details retrieved:', { domain: defaultDomain, details: domainDetails })
 
           if (domainDetails) {
             isCatchAllEnabledValue = domainDetails.catch_all === true
             // Cache the catch-all status
             await domainCacheService.setCachedCatchAllStatus(providerConfig.id, providerConfig.token, defaultDomain, isCatchAllEnabledValue)
-            console.log('[App] Cached catch-all status:', { domain: defaultDomain, isCatchAllEnabled: isCatchAllEnabledValue })
+            logger.debug('App', 'Cached catch-all status:', { domain: defaultDomain, isCatchAllEnabled: isCatchAllEnabledValue })
           } else {
-            console.log('[App] Domain details not found, generating alias normally')
+            logger.debug('App', 'Domain details not found, generating alias normally')
             isCatchAllEnabledValue = null
           }
         } else {
-          console.log('[App] Catch-all status cache hit:', { domain: defaultDomain, isCatchAllEnabled: isCatchAllEnabledValue })
+          logger.debug('App', 'Catch-all status cache hit:', { domain: defaultDomain, isCatchAllEnabled: isCatchAllEnabledValue })
         }
 
-        console.log('[App] Setting isCatchAllEnabled to:', isCatchAllEnabledValue)
+        logger.debug('App', 'Setting isCatchAllEnabled to:', isCatchAllEnabledValue)
         setIsCatchAllEnabled(isCatchAllEnabledValue)
 
         if (isCatchAllEnabledValue === false) {
           // Catch-all disabled: show placeholder, will be fetched from server on Copy & Fill
-          console.log('[App] Domain has catch-all disabled, showing placeholder')
+          logger.debug('App', 'Domain has catch-all disabled, showing placeholder')
           setGeneratedAlias('(Generating from server...)')
           shouldSkipAliasGeneration = true
         } else {
           // Catch-all enabled or unknown: generate alias locally (clear any previous placeholder)
-          console.log('[App] Domain has catch-all enabled or not determined, will generate alias normally')
+          logger.debug('App', 'Domain has catch-all enabled or not determined, will generate alias normally')
           setGeneratedAlias('')
         }
       } catch (error) {
-        console.error('[App] Error checking domain catch-all status:', error)
+        logger.error('App', 'Error checking domain catch-all status:', error)
         setIsCatchAllEnabled(null)
         // Continue with normal generation if error
       }
@@ -176,7 +177,7 @@ function App() {
 
     // If catch-all is disabled, skip alias generation (placeholder is already set)
     if (shouldSkipAliasGeneration) {
-      console.log('[App] Skipping alias generation for catch-all disabled domain')
+      logger.debug('App', 'Skipping alias generation for catch-all disabled domain')
       return
     }
 
@@ -187,7 +188,7 @@ function App() {
     })
 
     const alias = provider.generateAddress(localPart, defaultDomain)
-    console.log('[App] Generated alias:', alias)
+    logger.debug('App', 'Generated alias:', alias)
     setGeneratedAlias(alias)
   }
 
@@ -211,10 +212,10 @@ function App() {
     setIsProcessing(true);
     setProcessingStep(null);
     try {
-      console.log('========== Alias Bridge: Copy & Fill Started ==========');
-      console.log('Generated Alias:', generatedAlias);
-      console.log('Provider ID:', providerConfig?.id);
-      console.log('Wait Server Confirmation:', providerConfig?.waitServerConfirmation);
+      logger.info('App', '========== Alias Bridge: Copy & Fill Started ==========');
+      logger.debug('App', 'Generated Alias:', generatedAlias);
+      logger.debug('App', 'Provider ID:', providerConfig?.id);
+      logger.debug('App', 'Wait Server Confirmation:', providerConfig?.waitServerConfirmation);
 
       // Track the alias to use (may be updated by server)
       let aliasToUse = generatedAlias;
@@ -228,9 +229,9 @@ function App() {
 
         if (shouldWaitServerConfirmation) {
           setProcessingStep('Creating alias on server...');
-          console.log('[Step 1/3] Server Confirmation Required');
-          console.log('  - Provider:', providerConfig.id);
-          console.log('  - Creating alias on server...');
+          logger.debug('App', '[Step 1/3] Server Confirmation Required');
+          logger.debug('App', '  - Provider:', providerConfig.id);
+          logger.debug('App', '  - Creating alias on server...');
 
           const provider = providerRegistry.get(providerConfig.id);
           if (provider && provider.createAlias) {
@@ -241,36 +242,36 @@ function App() {
 
             const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation);
             if (result.success) {
-              console.log('  ✓ Alias successfully created on server');
+              logger.debug('App', '  ✓ Alias successfully created on server');
               // Use server-returned alias if available
               if (result.createdAlias) {
-                console.log('  - Using server-created alias:', result.createdAlias);
+                logger.debug('App', '  - Using server-created alias:', result.createdAlias);
                 aliasToUse = result.createdAlias;
               }
             } else {
-              console.error('  ✗ Failed to create alias on server:', result.error);
+              logger.error('App', '  ✗ Failed to create alias on server:', result.error);
               // For Addy, only continue if it's a catch-all domain (where creation isn't needed)
               // For other providers or real API errors, throw immediately
               if (providerConfig.id === 'addy' && result.isCatchAllDomain) {
-                console.log('  ℹ️ Catch-all domain detected, continuing without server confirmation');
+                logger.debug('App', '  ℹ️ Catch-all domain detected, continuing without server confirmation');
               } else {
                 throw new Error(`Failed to create alias: ${result.error}`);
               }
             }
           }
         } else {
-          console.log('[Step 1/3] No Server Confirmation Required');
-          console.log('  - waitServerConfirmation is disabled for Addy');
+          logger.debug('App', '[Step 1/3] No Server Confirmation Required');
+          logger.debug('App', '  - waitServerConfirmation is disabled for Addy');
         }
       }
 
       setProcessingStep('Copying to clipboard...');
-      console.log('[Step 2/3] Copying to clipboard');
+      logger.debug('App', '[Step 2/3] Copying to clipboard');
       await navigator.clipboard.writeText(aliasToUse);
-      console.log('  ✓ Alias copied to clipboard:', aliasToUse);
+      logger.debug('App', '  ✓ Alias copied to clipboard:', aliasToUse);
 
       setProcessingStep('Filling email field...');
-      console.log('[Step 3/3] Filling email input field');
+      logger.debug('App', '[Step 3/3] Filling email input field');
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab.id) {
@@ -309,11 +310,11 @@ function App() {
         }
       }
 
-      console.log('========== Alias Bridge: Copy & Fill Completed Successfully ==========');
+      logger.info('App', '========== Alias Bridge: Copy & Fill Completed Successfully ==========');
       setProcessingStep(null);
     } catch (err) {
-      console.error('========== Alias Bridge: Copy & Fill Failed ==========');
-      console.error('Error:', err);
+      logger.error('App', '========== Alias Bridge: Copy & Fill Failed ==========');
+      logger.error('App', 'Error:', err);
       setProcessingStep(null);
     } finally {
       setIsProcessing(false);
@@ -323,10 +324,10 @@ function App() {
   // Load initial state
   useEffect(() => {
     const init = async () => {
-      console.log('[App] Initializing popup page, loading latest config from storage')
+      logger.debug('App', 'Initializing popup page, loading latest config from storage')
       // Load settings - always reload to get latest from storage
       const enabled = await providerService.getEnabledProviders()
-      console.log('[App] Loaded enabled providers:', enabled)
+      logger.debug('App', 'Loaded enabled providers:', enabled)
       setProviders(enabled)
 
       if (enabled.length > 0) {
@@ -336,7 +337,7 @@ function App() {
           ? defaultProvider
           : enabled[0]
 
-        console.log('[App] Initial provider config:', initial)
+        logger.debug('App', 'Initial provider config:', initial)
         setSelectedProviderId(initial.id)
         setProviderConfig(initial)
         setActiveTab(initial.activeFormat || 'uuid')
@@ -372,14 +373,14 @@ function App() {
   // Listen for storage changes to update provider config when settings change
   useEffect(() => {
     const handleStorageChange = async () => {
-      console.log('[App] Storage changed, reloading provider config...')
+      logger.debug('App', 'Storage changed, reloading provider config...')
       const enabled = await providerService.getEnabledProviders()
       setProviders(enabled)
       if (selectedProviderId) {
         const updated = enabled.find(p => p.id === selectedProviderId)
         if (updated) {
           setProviderConfig(updated)
-          console.log('[App] Provider config updated:', updated)
+          logger.debug('App', 'Provider config updated:', updated)
         }
       }
     }

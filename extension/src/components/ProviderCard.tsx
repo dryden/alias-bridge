@@ -11,6 +11,7 @@ import { providerService } from '../services/providers/provider.service';
 import { providerRegistry } from '../services/providers/registry';
 import type { ProviderConfig, CustomRule } from '../services/providers/types';
 import { groupDomainsByRoot } from '../lib/domainGrouper';
+import { logger } from '../services/logger';
 
 import { checkAndUpdateCatchAllStatus } from '../services/catchAll.helper';
 
@@ -90,12 +91,12 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
     const handleRefreshDomains = async () => {
         setIsRefreshingDomains(true);
         try {
-            console.log('[ProviderCard] Refreshing domains...');
+            logger.debug('ProviderCard', 'Refreshing domains...');
             await fetchDomains(token);
-            console.log('[ProviderCard] Domains refreshed. Available domains:', availableDomains);
+            logger.debug('ProviderCard', 'Domains refreshed. Available domains:', availableDomains);
             // After refreshing domains, re-check the catch_all status for current domain
             if (config?.defaultDomain && providerId === 'addy') {
-                console.log('[ProviderCard] Re-checking catch_all status for:', config.defaultDomain);
+                logger.debug('ProviderCard', 'Re-checking catch_all status for:', config.defaultDomain);
                 await checkDomainCatchAllStatus(config.defaultDomain);
             }
         } finally {
@@ -192,7 +193,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
         setConfig(newConfig);
         await providerService.saveProviderConfig(newConfig);
 
-        console.log('[ProviderCard] Favorites updated:', updatedFavorites);
+        logger.debug('ProviderCard', 'Favorites updated:', updatedFavorites);
     };
 
     // Helper to generate example (simplified version of SettingsPage logic)

@@ -1,4 +1,6 @@
-console.log("Alias Bridge content script loaded");
+import { logger } from './services/logger';
+
+logger.debug('content', 'Alias Bridge content script loaded');
 
 
 // Function to create and inject the icon
@@ -103,16 +105,16 @@ function injectIcon(input: HTMLInputElement) {
                         }, 1000);
                         return; // Success
                     } else {
-                        console.warn('Alias Bridge: Failed to generate alias', response?.error);
+                        logger.warn('content', 'Failed to generate alias', response?.error);
                         throw new Error(response?.error || 'No alias generated');
                     }
                 } catch (err) {
                     lastError = err instanceof Error ? err : new Error(String(err));
-                    console.warn(`Alias Bridge: Attempt ${attempt}/${maxRetries} failed:`, lastError.message);
+                    logger.warn('content', `Attempt ${attempt}/${maxRetries} failed:`, lastError.message);
 
                     // Check if error is "context invalidated" which might be retryable
                     if (lastError.message.includes('context invalidated') && attempt < maxRetries) {
-                        console.log(`Alias Bridge: Retrying in ${retryDelay}ms...`);
+                        logger.debug('content', `Retrying in ${retryDelay}ms...`);
                         await new Promise(resolve => setTimeout(resolve, retryDelay));
                         continue; // Retry
                     }
@@ -125,7 +127,7 @@ function injectIcon(input: HTMLInputElement) {
             }
 
             // All attempts failed
-            console.error('Alias Bridge: Error requesting alias after retries:', lastError);
+            logger.error('content', 'Error requesting alias after retries:', lastError);
             iconContainer.innerHTML = originalContent;
             // Show error feedback (red)
             const originalBg = iconContainer.style.backgroundColor;
@@ -190,7 +192,7 @@ function updateIconVisibility() {
                 });
                 isObserverActive = true;
             }
-            console.log('Alias Bridge: Icons enabled');
+            logger.debug('content', 'Icons enabled');
         } else {
             // Icons should be hidden
             removeAllIcons();
@@ -198,7 +200,7 @@ function updateIconVisibility() {
                 observer.disconnect();
                 isObserverActive = false;
             }
-            console.log('Alias Bridge: Icons disabled');
+            logger.debug('content', 'Icons disabled');
         }
     });
 }
@@ -209,7 +211,7 @@ updateIconVisibility();
 // Listen for storage changes to update icon visibility
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.multiProviderSettings) {
-        console.log('Alias Bridge: Settings changed, updating icon visibility');
+        logger.debug('content', 'Settings changed, updating icon visibility');
         updateIconVisibility();
     }
 });
@@ -227,7 +229,7 @@ chrome.runtime.onMessage.addListener((request) => {
             activeElement.dispatchEvent(new Event('change', { bubbles: true }));
         } else {
             // Fallback: Copy to clipboard if no active input
-            navigator.clipboard.writeText(request.alias).catch(err => console.error('Failed to copy', err));
+            navigator.clipboard.writeText(request.alias).catch(err => logger.error('content', 'Failed to copy', err));
         }
     }
 });

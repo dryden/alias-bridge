@@ -1,5 +1,6 @@
 import type { AliasProvider } from './types';
 import { verifyToken, getDomains, getDomainDetails, SHARED_DOMAINS } from '../addy';
+import { logger } from '../logger';
 
 export class AddyProvider implements AliasProvider {
     id = 'addy';
@@ -24,12 +25,12 @@ export class AddyProvider implements AliasProvider {
 
     async createAlias(alias: string, token: string, domain?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
-            console.log('[Addy.io] Creating alias:', { alias, domain });
+            logger.debug('addy.provider', 'Creating alias:', { alias, domain });
 
             // Case 1: Server-side generation (no specific alias provided)
             // This happens when catch-all is disabled and we want Addy to generate the alias
             if ((!alias || alias === '(Generating from server...)') && domain) {
-                console.log('[Addy.io] Requesting server-side generation for domain:', domain);
+                logger.debug('addy.provider', 'Requesting server-side generation for domain:', domain);
 
                 const response = await fetch('https://app.addy.io/api/v1/aliases', {
                     method: 'POST',
@@ -46,11 +47,11 @@ export class AddyProvider implements AliasProvider {
                 });
 
                 const responseData = await response.json();
-                console.log('[Addy.io] Create response:', response.status, responseData);
+                logger.debug('addy.provider', 'Create response:', response.status, responseData);
 
                 if (response.ok) {
                     const createdAlias = responseData.data?.email || responseData.data?.address;
-                    console.log('[Addy.io] ✓ Server generated alias:', createdAlias);
+                    logger.debug('addy.provider', 'Server generated alias:', createdAlias);
                     return { success: true, createdAlias };
                 }
 
@@ -70,7 +71,7 @@ export class AddyProvider implements AliasProvider {
             const localPart = alias.substring(0, atIndex);
             const aliasDomain = alias.substring(atIndex + 1);
 
-            console.log('[Addy.io] Parsed -', { localPart, domain: aliasDomain });
+            logger.debug('addy.provider', 'Parsed -', { localPart, domain: aliasDomain });
 
             // Check if this is a username domain (e.g., 0309.4wrd.cc) or root shared domain
             const parts = aliasDomain.split('.');
@@ -80,36 +81,36 @@ export class AddyProvider implements AliasProvider {
 
             // Detect if it's a username domain format
             if (potentialSharedDomain && SHARED_DOMAINS.includes(potentialSharedDomain)) {
-                console.log('[Addy.io] Username domain detected:', aliasDomain);
+                logger.debug('addy.provider', 'Username domain detected:', aliasDomain);
                 isUsernameOrSharedDomain = true;
             }
 
             // Detect if it's a root shared domain
             if (SHARED_DOMAINS.includes(aliasDomain)) {
-                console.log('[Addy.io] Root shared domain detected:', aliasDomain);
+                logger.debug('addy.provider', 'Root shared domain detected:', aliasDomain);
                 isUsernameOrSharedDomain = true;
             }
 
             // For these domain types, check actual catch-all status
             if (isUsernameOrSharedDomain) {
                 const domainDetails = await getDomainDetails(token, aliasDomain);
-                console.log('[Addy.io] Domain details fetched:', domainDetails);
+                logger.debug('addy.provider', 'Domain details fetched:', domainDetails);
 
                 if (domainDetails && domainDetails.catch_all === true) {
-                    console.log('[Addy.io] Domain has catch-all enabled, no API call needed:', aliasDomain);
+                    logger.debug('addy.provider', 'Domain has catch-all enabled, no API call needed:', aliasDomain);
                     return { success: true, isCatchAllDomain: true };
                 } else {
-                    console.log('[Addy.io] Domain has catch-all disabled, API call needed:', aliasDomain);
+                    logger.debug('addy.provider', 'Domain has catch-all disabled, API call needed:', aliasDomain);
                     // Username/shared domains don't need domain ID lookup, proceed directly to API call
                 }
             }
 
             // For custom domains, verify domain exists first
             if (!isUsernameOrSharedDomain) {
-                console.log('[Addy.io] Custom domain detected, verifying domain exists...');
+                logger.debug('addy.provider', 'Custom domain detected, verifying domain exists...');
                 const domainDetails = await getDomainDetails(token, aliasDomain);
                 if (!domainDetails) {
-                    console.error('[Addy.io] Failed to find domain:', aliasDomain);
+                    logger.error('addy.provider', 'Failed to find domain:', aliasDomain);
                     return {
                         success: false,
                         error: `Unable to find domain "${aliasDomain}". Please check that this domain is properly configured in your Addy account.`
@@ -117,7 +118,7 @@ export class AddyProvider implements AliasProvider {
                 }
             }
 
-            console.log('[Addy.io] Creating alias via API with domain:', aliasDomain);
+            logger.debug('addy.provider', 'Creating alias via API with domain:', aliasDomain);
 
             // Create alias via Addy API with custom format
             // Using format: "custom" tells Addy to use the exact local_part we specified
@@ -137,13 +138,13 @@ export class AddyProvider implements AliasProvider {
             });
 
             const responseData = await response.json();
-            console.log('[Addy.io] Create response:', response.status, responseData);
+            logger.debug('addy.provider', 'Create response:', response.status, responseData);
 
             if (response.ok) {
                 const createdAlias = responseData.data?.address || alias;
-                console.log('[Addy.io] ✓ Alias successfully created:', createdAlias);
-                console.log('[Addy.io] Expected alias:', alias);
-                console.log('[Addy.io] Match:', createdAlias === alias ? 'YES ✓' : 'NO - mismatch');
+                logger.debug('addy.provider', 'Alias successfully created:', createdAlias);
+                logger.debug('addy.provider', 'Expected alias:', alias);
+                logger.debug('addy.provider', 'Match:', createdAlias === alias ? 'YES' : 'NO - mismatch');
                 return { success: true, createdAlias };
             }
 
@@ -152,17 +153,17 @@ export class AddyProvider implements AliasProvider {
                 const errorMessage = responseData.message?.toLowerCase() || '';
                 const errors = responseData.errors || {};
 
-                console.log('[Addy.io] 422 Error details:', { message: responseData.message, errors });
+                logger.debug('addy.provider', '422 Error details:', { message: responseData.message, errors });
 
                 // Check if it's an "alias already exists" error
                 if (errorMessage.includes('alias') || errorMessage.includes('exists')) {
-                    console.log('[Addy.io] Alias already exists (422)');
+                    logger.debug('addy.provider', 'Alias already exists (422)');
                     return { success: true, createdAlias: alias };
                 }
 
                 // If it's a domain field error
                 if (errors.domain || errorMessage.includes('domain')) {
-                    console.error('[Addy.io] Domain field error');
+                    logger.error('addy.provider', 'Domain field error');
                     return {
                         success: false,
                         error: `Domain error: ${responseData.message || 'The domain could not be applied'}`
@@ -176,7 +177,7 @@ export class AddyProvider implements AliasProvider {
             };
 
         } catch (e) {
-            console.error('[Addy.io] Exception creating alias:', e);
+            logger.error('addy.provider', 'Exception creating alias:', e);
             return { success: false, error: String(e) };
         }
     }
