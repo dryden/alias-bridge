@@ -220,7 +220,10 @@ function App() {
 
       // Create alias on server if needed (Addy or SimpleLogin with waitServerConfirmation enabled)
       if (providerConfig) {
-        const shouldWaitServerConfirmation = providerConfig.id === 'simplelogin' || providerConfig.waitServerConfirmation === true;
+        // For Addy: only wait for server confirmation if catch-all is disabled
+        // For SimpleLogin: always wait for server confirmation
+        const shouldWaitServerConfirmation = providerConfig.id === 'simplelogin'
+          || (providerConfig.id === 'addy' && isCatchAllEnabled === false);
 
         if (shouldWaitServerConfirmation) {
           setProcessingStep('Creating alias on server...');
