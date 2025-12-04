@@ -80,16 +80,28 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                 console.log('[ProviderCard] Domain details:', details);
                 console.log('[ProviderCard] catch_all value:', details.catch_all);
 
-                if (details.catch_all === true) {
+                const isCatchAllEnabled = details.catch_all === true;
+                const newDomainCatchAllStatus = {
+                    ...config?.domainCatchAllStatus,
+                    [domain]: isCatchAllEnabled
+                };
+
+                if (isCatchAllEnabled) {
                     // Catch-all enabled: user cannot use server confirmation
                     console.log('[ProviderCard] Auto-saving waitServerConfirmation: false due to catch_all=true');
                     setCatchAllStatus('enabled');
-                    await updateConfig({ waitServerConfirmation: false });
+                    await updateConfig({
+                        waitServerConfirmation: false,
+                        domainCatchAllStatus: newDomainCatchAllStatus
+                    });
                 } else {
                     // Catch-all disabled: server confirmation is required
                     console.log('[ProviderCard] Auto-saving waitServerConfirmation: true due to catch_all=false');
                     setCatchAllStatus('disabled');
-                    await updateConfig({ waitServerConfirmation: true });
+                    await updateConfig({
+                        waitServerConfirmation: true,
+                        domainCatchAllStatus: newDomainCatchAllStatus
+                    });
                 }
             } else {
                 console.log('[ProviderCard] No details returned for domain:', domain);
@@ -166,7 +178,9 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                 token: token,
                 defaultDomain: config?.defaultDomain,
                 activeFormat: config?.activeFormat || 'uuid',
-                customRule: config?.customRule || DEFAULT_CUSTOM_RULE
+                customRule: config?.customRule || DEFAULT_CUSTOM_RULE,
+                domainCatchAllStatus: config?.domainCatchAllStatus || {},
+                favoriteDomains: config?.favoriteDomains || []
             };
             setConfig(newConfig);
             await providerService.saveProviderConfig(newConfig);
@@ -487,34 +501,38 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
 
                         {/* Domain Status Info */}
                         {providerId === 'addy' && (
-                            <div className="px-4 py-4 border-t border-slate-800 space-y-2">
+                            <div className="px-4 py-4 border-t border-slate-800 space-y-3">
                                 {catchAllStatus === 'disabled' && (
-                                    <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 space-y-2">
-                                        <div className="flex items-start gap-2.5">
-                                            <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-semibold text-blue-300 mb-1">Server Generation Mode</p>
-                                                <p className="text-xs text-blue-200/80 leading-relaxed">
-                                                    This domain doesn't support custom formats. The server will generate a random alias when you click "Copy & Fill".
-                                                </p>
-                                            </div>
+                                    <div className="space-y-3">
+                                        {/* Status Badge */}
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 bg-blue-400 rounded-full shadow-lg shadow-blue-400/50"></div>
+                                            <span className="text-xs font-semibold text-blue-300">Server Generation Mode</span>
+                                            <span className="text-xs text-blue-200/60">Custom formats unavailable for this domain</span>
+                                        </div>
+
+                                        {/* Info Box */}
+                                        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                                            <p className="text-xs text-blue-300 leading-relaxed">
+                                                ℹ️ This domain doesn't support catch-all aliases. Click "Copy & Fill" in the popup to have the server generate one.
+                                            </p>
                                         </div>
                                     </div>
                                 )}
                                 {catchAllStatus === 'enabled' && (
-                                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3 space-y-2">
-                                        <div className="flex items-start gap-2.5">
-                                            <div className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                                <Check className="w-3 h-3 text-slate-300" />
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-semibold text-slate-300 mb-1">Local Generation Mode</p>
-                                                <p className="text-xs text-slate-400 leading-relaxed">
-                                                    This domain supports all alias formats. You can choose your preferred format above.
-                                                </p>
-                                            </div>
+                                    <div className="space-y-3">
+                                        {/* Status Badge */}
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 bg-green-400 rounded-full shadow-lg shadow-green-400/50"></div>
+                                            <span className="text-xs font-semibold text-green-300">Local Generation Mode</span>
+                                            <span className="text-xs text-green-200/60">All formats available</span>
+                                        </div>
+
+                                        {/* Info Box */}
+                                        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                                            <p className="text-xs text-green-300 leading-relaxed">
+                                                ✓ This domain supports all alias formats. You can choose your preferred format below.
+                                            </p>
                                         </div>
                                     </div>
                                 )}

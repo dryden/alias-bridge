@@ -4,6 +4,7 @@ import { generateLocalPart, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/a
 import { providerService } from './services/providers/provider.service'
 import { providerRegistry } from './services/providers/registry'
 import type { ProviderConfig } from './services/providers/types'
+import { domainCacheService } from './services/domain-cache.service'
 import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown } from 'lucide-react'
 import { cn } from './lib/utils'
 
@@ -28,13 +29,26 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState<string | null>(null)
   const [isCatchAllEnabled, setIsCatchAllEnabled] = useState<boolean | null>(null)
+  const [isRefreshingDomains, setIsRefreshingDomains] = useState(false)
 
-  // Fetch domains when provider config changes
+  // Fetch domains when provider config changes (with caching)
   useEffect(() => {
     const fetchDomains = async () => {
       if (providerConfig && providerConfig.token) {
         try {
-          const domains = await providerService.getProviderDomains(providerConfig.id, providerConfig.token)
+          // Try to get from cache first
+          let domains = await domainCacheService.getCachedDomains(providerConfig.id, providerConfig.token)
+
+          if (!domains) {
+            // Cache miss, fetch from provider
+            console.log('[App] Domain cache miss, fetching from provider')
+            domains = await providerService.getProviderDomains(providerConfig.id, providerConfig.token)
+            // Cache the result
+            await domainCacheService.setCachedDomains(providerConfig.id, providerConfig.token, domains)
+          } else {
+            console.log('[App] Domain cache hit, using cached domains')
+          }
+
           setAvailableDomains(domains)
 
           // Ensure defaultDomain is in the list, if not select the first one
@@ -44,8 +58,6 @@ function App() {
 
             // Update config in storage
             const newConfig = { ...providerConfig, defaultDomain: newDefault }
-            // Update local state to reflect change (optional, but good for consistency)
-            // Note: calling setProviderConfig might trigger re-renders but not this effect if deps are id/token
             setProviderConfig(newConfig)
             await providerService.saveProviderConfig(newConfig)
             console.log('[App] Auto-selected default domain:', newDefault)
@@ -60,6 +72,34 @@ function App() {
     }
     fetchDomains()
   }, [providerConfig?.id, providerConfig?.token])
+
+  // Refresh domains (invalidate cache and fetch fresh)
+  const refreshDomains = async () => {
+    if (!providerConfig || !providerConfig.token) return
+
+    setIsRefreshingDomains(true)
+    try {
+      // Invalidate domain and catch-all cache
+      await domainCacheService.invalidateCache(providerConfig.id, providerConfig.token)
+
+      // Fetch fresh domains from provider
+      const domains = await providerService.getProviderDomains(providerConfig.id, providerConfig.token)
+
+      // Cache the result
+      await domainCacheService.setCachedDomains(providerConfig.id, providerConfig.token, domains)
+
+      setAvailableDomains(domains)
+
+      // Reset catch-all status for current domain so it will be re-fetched on next alias generation
+      setIsCatchAllEnabled(null)
+
+      console.log('[App] Domains refreshed:', domains.length)
+    } catch (error) {
+      console.error('Failed to refresh domains:', error)
+    } finally {
+      setIsRefreshingDomains(false)
+    }
+  }
 
   // Handlers
   const openSettings = () => {
@@ -82,26 +122,39 @@ function App() {
 
     if (providerConfig.id === 'addy') {
       try {
-        const { getDomainDetails } = await import('./services/addy')
-        const domainDetails = await getDomainDetails(providerConfig.token, defaultDomain)
-        console.log('[App] generateAlias - Domain details retrieved:', { domain: defaultDomain, details: domainDetails })
+        // Try to get catch-all status from cache first
+        let isCatchAllEnabledValue = await domainCacheService.getCachedCatchAllStatus(providerConfig.id, providerConfig.token, defaultDomain)
 
-        if (domainDetails) {
-          const isCatchAllEnabledValue = domainDetails.catch_all === true
-          console.log('[App] Setting isCatchAllEnabled to:', isCatchAllEnabledValue)
-          setIsCatchAllEnabled(isCatchAllEnabledValue)
+        if (isCatchAllEnabledValue === null) {
+          // Cache miss, fetch from provider
+          console.log('[App] Catch-all status cache miss, fetching from provider')
+          const { getDomainDetails } = await import('./services/addy')
+          const domainDetails = await getDomainDetails(providerConfig.token, defaultDomain)
+          console.log('[App] generateAlias - Domain details retrieved:', { domain: defaultDomain, details: domainDetails })
 
-          if (domainDetails.catch_all === false) {
-            // Catch-all disabled: show placeholder, will be fetched from server on Copy & Fill
-            console.log('[App] Domain has catch-all disabled, showing placeholder')
-            setGeneratedAlias('(Generating from server...)')
-            shouldSkipAliasGeneration = true
+          if (domainDetails) {
+            isCatchAllEnabledValue = domainDetails.catch_all === true
+            // Cache the catch-all status
+            await domainCacheService.setCachedCatchAllStatus(providerConfig.id, providerConfig.token, defaultDomain, isCatchAllEnabledValue)
+            console.log('[App] Cached catch-all status:', { domain: defaultDomain, isCatchAllEnabled: isCatchAllEnabledValue })
           } else {
-            console.log('[App] Domain has catch-all enabled, will generate alias normally')
+            console.log('[App] Domain details not found, generating alias normally')
+            isCatchAllEnabledValue = null
           }
         } else {
-          console.log('[App] Domain details not found, generating alias normally')
-          setIsCatchAllEnabled(null)
+          console.log('[App] Catch-all status cache hit:', { domain: defaultDomain, isCatchAllEnabled: isCatchAllEnabledValue })
+        }
+
+        console.log('[App] Setting isCatchAllEnabled to:', isCatchAllEnabledValue)
+        setIsCatchAllEnabled(isCatchAllEnabledValue)
+
+        if (isCatchAllEnabledValue === false) {
+          // Catch-all disabled: show placeholder, will be fetched from server on Copy & Fill
+          console.log('[App] Domain has catch-all disabled, showing placeholder')
+          setGeneratedAlias('(Generating from server...)')
+          shouldSkipAliasGeneration = true
+        } else {
+          console.log('[App] Domain has catch-all enabled, will generate alias normally')
         }
       } catch (error) {
         console.error('[App] Error checking domain catch-all status:', error)
@@ -130,16 +183,6 @@ function App() {
     setGeneratedAlias(alias)
   }
 
-  const handleProviderChange = async (providerId: string) => {
-    const config = providers.find(p => p.id === providerId)
-    if (config) {
-      setSelectedProviderId(providerId)
-      setProviderConfig(config)
-      setActiveTab(config.activeFormat || 'uuid')
-      setDefaultDomain(config.defaultDomain || '')
-      if (config.customRule) setCustomRule(config.customRule)
-    }
-  }
 
   const handleTabChange = async (value: string) => {
     if ((value === 'domain' || value === 'custom') && !isPro) {
@@ -394,53 +437,48 @@ function App() {
         </div>
       </div>
 
-      {/* Provider Selector */}
-      {providers.length > 1 && (
-        <div className="px-5 pt-3">
-          <div className="relative">
-            <select
-              value={selectedProviderId}
-              onChange={(e) => handleProviderChange(e.target.value)}
-              className="w-full h-9 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer"
-            >
-              {providers.map(p => (
-                <option key={p.id} value={p.id}>{providerRegistry.get(p.id)?.name || p.id}</option>
-              ))}
-            </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
-              <ChevronDown className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Card */}
       <div className="bg-slate-900 rounded-2xl p-4 shadow-lg border border-slate-800/50 mb-6 mx-5 mt-5">
         {/* Domain Selector */}
         <div className="mb-4">
-          <div className="relative">
-            <select
-              value={defaultDomain}
-              onChange={async (e) => {
-                const newDomain = e.target.value
-                setDefaultDomain(newDomain)
-                if (providerConfig) {
-                  const newConfig = { ...providerConfig, defaultDomain: newDomain }
-                  setProviderConfig(newConfig)
-                  await providerService.saveProviderConfig(newConfig)
-                }
-              }}
-              className="w-full h-9 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer"
-              disabled={availableDomains.length === 0}
-            >
-              {availableDomains.length === 0 && <option>Loading domains...</option>}
-              {availableDomains.map(domain => (
-                <option key={domain} value={domain}>{domain}</option>
-              ))}
-            </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
-              <ChevronDown className="w-4 h-4" />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <select
+                value={defaultDomain}
+                onChange={async (e) => {
+                  const newDomain = e.target.value
+                  setDefaultDomain(newDomain)
+                  if (providerConfig) {
+                    const newConfig = { ...providerConfig, defaultDomain: newDomain }
+                    setProviderConfig(newConfig)
+                    await providerService.saveProviderConfig(newConfig)
+                  }
+                }}
+                className="w-full h-9 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer"
+                disabled={availableDomains.length === 0}
+              >
+                {availableDomains.length === 0 && <option>Loading domains...</option>}
+                {availableDomains.map(domain => (
+                  <option key={domain} value={domain}>{domain}</option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                <ChevronDown className="w-4 h-4" />
+              </div>
             </div>
+            <button
+              onClick={refreshDomains}
+              disabled={isRefreshingDomains || availableDomains.length === 0}
+              className={cn(
+                "p-2 rounded-lg transition-colors",
+                isRefreshingDomains || availableDomains.length === 0
+                  ? "text-slate-600 cursor-not-allowed"
+                  : "text-slate-500 hover:text-white hover:bg-slate-800"
+              )}
+              title="Refresh domains"
+            >
+              <RefreshCw className={cn("w-4 h-4", isRefreshingDomains && "animate-spin")} />
+            </button>
           </div>
         </div>
 
@@ -479,52 +517,57 @@ function App() {
 
         {/* Generated Alias Input */}
         <div className="space-y-2 mb-2">
-          <label className="text-xs font-medium text-slate-400 ml-1">Generated Alias</label>
-
-          <div className="relative group">
-            <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
-            <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
-              <textarea
-                value={generatedAlias}
-                readOnly
-                rows={3}
-                className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
-              />
-              <div className="absolute right-2 relative">
-                <button
-                  onClick={generateAlias}
-                  disabled={isCatchAllEnabled === false}
-                  className={cn(
-                    "p-2 rounded-lg transition-colors",
-                    isCatchAllEnabled === false
-                      ? "text-slate-600 cursor-not-allowed"
-                      : "text-slate-500 hover:text-white hover:bg-slate-800"
-                  )}
-                  title={isCatchAllEnabled === false ? "Server Generation Mode" : "Refresh"}
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  {/* Diagonal slash overlay when disabled */}
-                  {isCatchAllEnabled === false && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-5 h-5 relative">
-                        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <line x1="4" y1="20" x2="20" y2="4" />
-                        </svg>
-                      </div>
-                    </div>
-                  )}
-                </button>
+          {isCatchAllEnabled === false ? (
+            <>
+              {/* Server Generation Mode Label */}
+              <div className="flex items-center gap-2 ml-1">
+                <div className="w-2 h-2 bg-blue-400 rounded-full shadow-lg shadow-blue-400/50"></div>
+                <label className="text-xs font-semibold text-blue-300">Server Generation Mode</label>
               </div>
-            </div>
-          </div>
 
-          {/* Info message for catch-all disabled domains */}
-          {isCatchAllEnabled === false && (
-            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <p className="text-xs text-blue-300 leading-relaxed">
-                This domain has catch-all disabled, so custom aliases are not supported. Click "Copy & Fill" to generate.
-              </p>
-            </div>
+              {/* Server Generation Placeholder */}
+              <div className="relative group">
+                <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
+                <div className="relative flex items-center justify-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700 min-h-[100px]">
+                  <div className="flex flex-col items-center justify-center gap-2 py-8">
+                    <div className="w-5 h-5 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin"></div>
+                    <p className="text-xs text-blue-300 font-medium">Click "Copy & Fill" to generate</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Info message for catch-all disabled domains */}
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <p className="text-xs text-blue-300 leading-relaxed">
+                  This domain doesn't support catch-all aliases. The server will generate a random alias when you click "Copy & Fill".
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="text-xs font-medium text-slate-400 ml-1">Generated Alias</label>
+
+              <div className="relative group">
+                <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
+                <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
+                  <textarea
+                    value={generatedAlias}
+                    readOnly
+                    rows={3}
+                    className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
+                  />
+                  <div className="absolute right-2 relative">
+                    <button
+                      onClick={generateAlias}
+                      className="p-2 rounded-lg transition-colors text-slate-500 hover:text-white hover:bg-slate-800"
+                      title="Regenerate alias"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
