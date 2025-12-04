@@ -157,7 +157,9 @@ function App() {
           setGeneratedAlias('(Generating from server...)')
           shouldSkipAliasGeneration = true
         } else {
-          console.log('[App] Domain has catch-all enabled, will generate alias normally')
+          // Catch-all enabled or unknown: generate alias locally (clear any previous placeholder)
+          console.log('[App] Domain has catch-all enabled or not determined, will generate alias normally')
+          setGeneratedAlias('')
         }
       } catch (error) {
         console.error('[App] Error checking domain catch-all status:', error)
