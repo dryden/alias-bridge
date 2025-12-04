@@ -39,8 +39,10 @@ function App() {
     const fetchDomains = async () => {
       if (providerConfig && providerConfig.token) {
         try {
-          // Try to get from cache first
-          let domains = await domainCacheService.getCachedDomains(providerConfig.id, providerConfig.token)
+          // First, try to use cachedDomains from providerConfig if available
+          let domains = providerConfig.cachedDomains && providerConfig.cachedDomains.length > 0
+            ? providerConfig.cachedDomains
+            : await domainCacheService.getCachedDomains(providerConfig.id, providerConfig.token)
 
           if (!domains) {
             // Cache miss, fetch from provider
