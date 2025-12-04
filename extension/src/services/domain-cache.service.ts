@@ -94,6 +94,7 @@ export const domainCacheService = {
     }
 
     cache[cacheKey].catchAllStatus[domain] = isCatchAllEnabled
+    cache[cacheKey].timestamp = Date.now() // Update timestamp when setting catch-all status
     await this.saveCache(cache)
   },
 
