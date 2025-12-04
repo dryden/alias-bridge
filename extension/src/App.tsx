@@ -481,25 +481,42 @@ function App() {
         <div className="space-y-2 mb-2">
           <label className="text-xs font-medium text-slate-400 ml-1">Generated Alias</label>
 
-          {isCatchAllEnabled !== false && (
-            <div className="relative group">
-              <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
-              <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
-                <textarea
-                  value={generatedAlias}
-                  readOnly
-                  rows={3}
-                  className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
-                />
+          <div className="relative group">
+            <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
+            <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
+              <textarea
+                value={generatedAlias}
+                readOnly
+                rows={3}
+                className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
+              />
+              <div className="absolute right-2 relative">
                 <button
                   onClick={generateAlias}
-                  className="absolute right-2 p-2 text-slate-500 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
+                  disabled={isCatchAllEnabled === false}
+                  className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    isCatchAllEnabled === false
+                      ? "text-slate-600 cursor-not-allowed"
+                      : "text-slate-500 hover:text-white hover:bg-slate-800"
+                  )}
+                  title={isCatchAllEnabled === false ? "Server Generation Mode" : "Refresh"}
                 >
                   <RefreshCw className="w-4 h-4" />
+                  {/* Diagonal slash overlay when disabled */}
+                  {isCatchAllEnabled === false && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-5 h-5 relative">
+                        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <line x1="4" y1="20" x2="20" y2="4" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
                 </button>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Info message for catch-all disabled domains */}
           {isCatchAllEnabled === false && (

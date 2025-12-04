@@ -5,22 +5,21 @@ import { Card, CardContent } from './components/ui/card'
 import { Label } from './components/ui/label'
 import { verifyLicense } from './services/license'
 import {
-    ExternalLink, Check, ChevronDown
+    ExternalLink, Check
 } from 'lucide-react'
 import { cn } from './lib/utils'
 import confetti from 'canvas-confetti'
 import { ProviderCard } from './components/ProviderCard'
 import { providerService } from './services/providers/provider.service'
-import { providerRegistry } from './services/providers/registry'
 import { migrateLegacyStorage } from './services/migration'
-import type { MultiProviderSettings } from './services/providers/types'
 
 
 
 
 function SettingsPage() {
     // Global State
-    const [multiSettings, setMultiSettings] = useState<MultiProviderSettings | null>(null)
+    // Global State
+    // const [multiSettings, setMultiSettings] = useState<MultiProviderSettings | null>(null)
 
     // License State
     const [isPro, setIsPro] = useState(false)
@@ -55,18 +54,18 @@ function SettingsPage() {
     }, [])
 
     const loadSettings = async () => {
-        const settings = await providerService.getSettings()
-        setMultiSettings(settings)
+        await providerService.getSettings()
+        // setMultiSettings(settings)
     }
 
     const handleConfigChange = () => {
         loadSettings()
     }
 
-    const handleDefaultProviderChange = async (providerId: string) => {
-        await providerService.setDefaultProvider(providerId)
-        loadSettings()
-    }
+    // const handleDefaultProviderChange = async (providerId: string) => {
+    //     await providerService.setDefaultProvider(providerId)
+    //     loadSettings()
+    // }
 
     const handleLicenseVerify = async () => {
         setLicenseStatus('verifying')
@@ -115,33 +114,32 @@ function SettingsPage() {
 
             <div className="max-w-2xl mx-auto p-4 space-y-8 pb-20">
 
-                {/* Default Service Selector */}
-                {multiSettings && Object.values(multiSettings.providers).filter(p => p.enabled).length > 1 && (
-                    <section className="space-y-3">
-                        <Label className="text-sm font-semibold text-slate-400 px-1">Default Service</Label>
-                        <div className="relative">
-                            <select
-                                value={multiSettings.defaultProviderId}
-                                onChange={(e) => handleDefaultProviderChange(e.target.value)}
-                                className="w-full h-10 rounded-lg bg-slate-900 border border-slate-800 text-sm text-slate-200 px-3 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                                {Object.values(multiSettings.providers).filter(p => p.enabled).map(p => (
-                                    <option key={p.id} value={p.id}>
-                                        {providerRegistry.get(p.id)?.name || p.id}
-                                    </option>
-                                ))}
-                            </select>
-                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-                        </div>
-                    </section>
-                )}
+                {/* Default Service Selector - Hidden, only Addy.io available */}
+                {/* <section className="space-y-3">
+                    <Label className="text-sm font-semibold text-slate-400 px-1">Default Service</Label>
+                    <div className="relative">
+                        <select
+                            value={multiSettings?.defaultProviderId || ''}
+                            onChange={(e) => handleDefaultProviderChange(e.target.value)}
+                            className="w-full h-10 rounded-lg bg-slate-900 border border-slate-800 text-sm text-slate-200 px-3 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        >
+                            {multiSettings && Object.values(multiSettings.providers).filter(p => p.enabled).map(p => (
+                                <option key={p.id} value={p.id}>
+                                    {providerRegistry.get(p.id)?.name || p.id}
+                                </option>
+                            ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                    </div>
+                </section> */}
 
                 {/* Providers */}
                 <section className="space-y-3">
                     <h2 className="text-sm font-semibold text-slate-400 px-1">Providers</h2>
                     <div className="space-y-4">
                         <ProviderCard providerId="addy" isPro={isPro} onConfigChange={handleConfigChange} />
-                        <ProviderCard providerId="simplelogin" isPro={isPro} onConfigChange={handleConfigChange} />
+                        {/* SimpleLogin temporarily hidden - too many issues to resolve */}
+                        {/* <ProviderCard providerId="simplelogin" isPro={isPro} onConfigChange={handleConfigChange} /> */}
                     </div>
                 </section>
 
@@ -186,6 +184,10 @@ function SettingsPage() {
                                         <li className="flex items-start gap-2 text-xs text-slate-400">
                                             <Check className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
                                             <span>Custom Format Rules</span>
+                                        </li>
+                                        <li className="flex items-start gap-2 text-xs text-slate-400">
+                                            <Check className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+                                            <span>Manage Favorite Domains</span>
                                         </li>
                                         <li className="flex items-start gap-2 text-xs text-slate-400">
                                             <Check className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />

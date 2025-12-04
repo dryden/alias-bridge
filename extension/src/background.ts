@@ -43,7 +43,8 @@ async function getSettings(): Promise<{ config: ProviderConfig, providerId: stri
     return { config, providerId };
 }
 
-// Core Alias Generation Logic
+// Core Alias Generation Logic - Simplified for background/icon/context menu use
+// This uses a simpler approach than the popup to avoid Service Worker context issues
 async function handleGenerateAlias(url: string): Promise<string | null> {
     try {
         const settings = await getSettings();
@@ -95,85 +96,26 @@ async function handleGenerateAlias(url: string): Promise<string | null> {
         // Generate initial alias string (client-side)
         let alias = provider.generateAddress(localPart, defaultDomain);
 
-        // Handle Provider Specifics
+        // For SimpleLogin: Always create via API
+        if (providerId === 'simplelogin' && provider.createAlias) {
+            console.log('Background: SimpleLogin - creating alias via API');
+            const result = await provider.createAlias(alias, config.token);
+            if (result.success && result.createdAlias) {
+                console.log('Background: SimpleLogin alias created:', result.createdAlias);
+                return result.createdAlias;
+            } else {
+                console.warn('Background: SimpleLogin creation failed:', result.error);
+                // Still return the locally generated alias as fallback
+                return alias;
+            }
+        }
+
+        // For Addy: Return the locally generated alias
+        // The popup handles catch-all checking and server generation
+        // Icon/context menu use the simple approach
         if (providerId === 'addy') {
-            // Check Catch-all status via createAlias logic
-            // We pass the domain and an empty alias (or placeholder) to trigger the check inside createAlias
-            // If catch-all is disabled, createAlias will handle server-side generation
-
-            // Note: We need to check if we should force server-side generation
-            // Since we can't easily check catch-all status here without duplicating logic,
-            // we rely on AddyProvider.createAlias to handle it.
-            // However, AddyProvider.createAlias as implemented requires us to know if we should pass the domain.
-
-            // Let's use a strategy:
-            // 1. Try to create alias. If it's a catch-all domain, it might return success immediately or we might need to check.
-            // Actually, the updated AddyProvider.createAlias handles the logic:
-            // if we pass (alias, token, domain), it checks catch-all.
-
-            // But wait, if catch-all is ENABLED, we just want to return the local alias without API call?
-            // The user wants: "If catch-all disabled, go to server".
-            // If catch-all enabled, we can just use the local alias.
-
-            // To be safe and consistent with the requirement:
-            // We can call createAlias with the generated alias. 
-            // The provider should be smart enough.
-            // But our provider implementation currently calls API if we pass an alias, unless it detects catch-all is enabled.
-            // So calling createAlias is the right move.
-
-            if (provider.createAlias) {
-                // We pass the generated alias. The provider will check if it's a catch-all domain.
-                // If it IS a catch-all domain, it returns success (and we use the alias).
-                // If it is NOT a catch-all domain, it calls the API to create it.
-                // Wait, if it is NOT a catch-all domain, we want the SERVER to generate it (UUID) or use our custom one?
-                // The user requirement says: "Go Addy generated alias route".
-                // This implies we should let Addy generate it if catch-all is disabled.
-
-                // Let's look at AddyProvider.createAlias again.
-                // It checks domain details.
-                // If catch-all is TRUE -> returns { success: true, isCatchAllDomain: true } -> we use our local alias.
-                // If catch-all is FALSE -> it proceeds to call API with the custom alias we passed.
-
-                // BUT, if catch-all is FALSE, the user wants "Addy generated alias" (server side random), 
-                // NOT "try to create this custom alias I just made".
-                // Because "Custom aliases not supported".
-
-                // So we need to know catch-all status BEFORE deciding what to pass to createAlias.
-                // Or we modify createAlias to handle this "fallback to server generation" logic?
-                // I already modified createAlias to support server generation if alias is empty.
-
-                // So:
-                // 1. Get domain details.
-                // 2. If catch-all is false -> call createAlias('', token, domain)
-                // 3. If catch-all is true -> return local alias.
-
-                // To avoid duplicating "getDomainDetails" logic here, we can instantiate AddyProvider and use its internal methods if they were public,
-                // but they are imported from '../addy'.
-                // We can import getDomainDetails here too.
-
-                const { getDomainDetails } = await import('./services/addy');
-                const domainDetails = await getDomainDetails(config.token, defaultDomain);
-
-                if (domainDetails && domainDetails.catch_all === false) {
-                    console.log('Background: Catch-all disabled, requesting server generation');
-                    const result = await provider.createAlias!('', config.token, defaultDomain);
-                    if (result.success && result.createdAlias) {
-                        return result.createdAlias;
-                    }
-                } else {
-                    // Catch-all enabled or unknown, use local alias
-                    // (Optional: we could still call createAlias to register it if needed, but for Addy catch-all it's not needed)
-                    return alias;
-                }
-            }
-        } else if (providerId === 'simplelogin') {
-            // SimpleLogin always needs creation via API for custom aliases (or suffixes)
-            if (provider.createAlias) {
-                const result = await provider.createAlias(alias, config.token);
-                if (result.success && result.createdAlias) {
-                    return result.createdAlias;
-                }
-            }
+            console.log('Background: Addy - returning locally generated alias');
+            return alias;
         }
 
         return alias;
@@ -192,8 +134,17 @@ async function shouldShowUI(): Promise<boolean> {
     const { config, providerId } = settings;
 
     if (providerId === 'addy') {
-        // If waitServerConfirmation is true, it means Catch-all is DISABLED (locked).
-        // User wants to HIDE UI (Icon and Context Menu) in this case.
+        // For Addy, hide UI if catch-all is disabled for the default domain
+        // Because icon/context menu generate invalid aliases that won't work
+        if (config.defaultDomain && config.domainCatchAllStatus) {
+            const isCatchAllDisabled = config.domainCatchAllStatus[config.defaultDomain] === false;
+            if (isCatchAllDisabled) {
+                console.log('Background: Hiding UI - catch-all is disabled for domain:', config.defaultDomain);
+                return false;
+            }
+        }
+
+        // Also respect the legacy waitServerConfirmation setting
         if (config.waitServerConfirmation === true) {
             return false;
         }

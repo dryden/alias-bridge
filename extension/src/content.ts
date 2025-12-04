@@ -12,6 +12,7 @@ function injectIcon(input: HTMLInputElement) {
     wrapper.style.width = input.offsetWidth > 0 ? `${input.offsetWidth}px` : '100%';
 
     const iconContainer = document.createElement('div');
+    iconContainer.setAttribute('data-alias-bridge-icon-container', 'true');
     iconContainer.style.position = 'absolute';
     iconContainer.style.top = '50%';
     iconContainer.style.right = '10px';
@@ -23,8 +24,9 @@ function injectIcon(input: HTMLInputElement) {
     iconContainer.style.justifyContent = 'center';
     iconContainer.style.width = '20px';
     iconContainer.style.height = '20px';
-    iconContainer.style.backgroundColor = '#1e293b'; // Slate 800
-    iconContainer.style.borderRadius = '4px';
+    iconContainer.style.backgroundColor = 'transparent';
+    iconContainer.style.opacity = '0.6';
+    iconContainer.style.transition = 'opacity 0.2s ease';
     iconContainer.title = 'Generate Alias';
 
     // Custom Logo
@@ -43,7 +45,15 @@ function injectIcon(input: HTMLInputElement) {
         // Mark input as processed
         input.dataset.aliasBridgeIcon = 'true';
 
-        // Click handler
+        // Hover effects
+        iconContainer.addEventListener('mouseenter', () => {
+            iconContainer.style.opacity = '1';
+        });
+        iconContainer.addEventListener('mouseleave', () => {
+            iconContainer.style.opacity = '0.6';
+        });
+
+        // Click handler with retry logic
         iconContainer.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -60,47 +70,69 @@ function injectIcon(input: HTMLInputElement) {
                 document.head.appendChild(style);
             }
 
-            try {
-                // Request alias from background script
-                const response = await chrome.runtime.sendMessage({
-                    action: 'generateAlias',
-                    url: window.location.href
-                });
+            const maxRetries = 3;
+            const retryDelay = 500;
+            let lastError: Error | null = null;
 
-                if (response && response.alias) {
-                    const alias = response.alias;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    // Request alias from background script
+                    const response = await chrome.runtime.sendMessage({
+                        action: 'generateAlias',
+                        url: window.location.href
+                    });
 
-                    // Fill input
-                    input.value = alias;
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                    input.focus();
+                    if (response && response.alias) {
+                        const alias = response.alias;
 
-                    // Copy to clipboard
-                    await navigator.clipboard.writeText(alias);
+                        // Fill input
+                        input.value = alias;
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                        input.focus();
 
-                    // Show success feedback
-                    iconContainer.innerHTML = originalContent;
-                    const originalBg = iconContainer.style.backgroundColor;
-                    iconContainer.style.backgroundColor = '#22c55e'; // Green
-                    setTimeout(() => {
-                        iconContainer.style.backgroundColor = originalBg;
-                    }, 1000);
-                } else {
-                    console.warn('Alias Bridge: Failed to generate alias', response?.error);
-                    // Revert icon
-                    iconContainer.innerHTML = originalContent;
-                    // Optional: Show error feedback (red)
-                    const originalBg = iconContainer.style.backgroundColor;
-                    iconContainer.style.backgroundColor = '#ef4444'; // Red
-                    setTimeout(() => {
-                        iconContainer.style.backgroundColor = originalBg;
-                    }, 1000);
+                        // Copy to clipboard
+                        await navigator.clipboard.writeText(alias);
+
+                        // Show success feedback
+                        iconContainer.innerHTML = originalContent;
+                        const originalBg = iconContainer.style.backgroundColor;
+                        iconContainer.style.backgroundColor = '#22c55e'; // Green
+                        setTimeout(() => {
+                            iconContainer.style.backgroundColor = originalBg;
+                        }, 1000);
+                        return; // Success
+                    } else {
+                        console.warn('Alias Bridge: Failed to generate alias', response?.error);
+                        throw new Error(response?.error || 'No alias generated');
+                    }
+                } catch (err) {
+                    lastError = err instanceof Error ? err : new Error(String(err));
+                    console.warn(`Alias Bridge: Attempt ${attempt}/${maxRetries} failed:`, lastError.message);
+
+                    // Check if error is "context invalidated" which might be retryable
+                    if (lastError.message.includes('context invalidated') && attempt < maxRetries) {
+                        console.log(`Alias Bridge: Retrying in ${retryDelay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                        continue; // Retry
+                    }
+
+                    // For other errors, don't retry
+                    if (!lastError.message.includes('context invalidated')) {
+                        break;
+                    }
                 }
-            } catch (err) {
-                console.error('Alias Bridge: Error requesting alias:', err);
-                iconContainer.innerHTML = originalContent;
             }
+
+            // All attempts failed
+            console.error('Alias Bridge: Error requesting alias after retries:', lastError);
+            iconContainer.innerHTML = originalContent;
+            // Show error feedback (red)
+            const originalBg = iconContainer.style.backgroundColor;
+            iconContainer.style.backgroundColor = '#ef4444'; // Red
+            setTimeout(() => {
+                iconContainer.style.backgroundColor = originalBg;
+            }, 1000);
         });
     }
 }
@@ -122,21 +154,63 @@ const observer = new MutationObserver((mutations) => {
     });
 });
 
-// Initial check - inject icon on all email inputs
-chrome.runtime.sendMessage({ action: 'shouldShowIcon' }, (response) => {
-    if (response && response.shouldShow) {
-        // Initial scan
-        document.querySelectorAll('input[type="email"]').forEach((input) => {
-            injectIcon(input as HTMLInputElement);
-        });
+let isObserverActive = false;
 
-        // Start observing
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    } else {
-        console.log('Alias Bridge: Icon injection disabled by settings');
+// Function to remove all injected icons
+function removeAllIcons() {
+    document.querySelectorAll('[data-alias-bridge-icon]').forEach((input) => {
+        // Remove the data attribute so it can be re-added later
+        delete (input as HTMLElement).dataset.aliasBridgeIcon;
+
+        const parent = input.parentElement;
+        if (parent) {
+            // Find and remove the icon container
+            const iconContainer = parent.querySelector('div[data-alias-bridge-icon-container]');
+            if (iconContainer) {
+                iconContainer.remove();
+            }
+        }
+    });
+}
+
+// Function to inject/remove icons based on settings
+function updateIconVisibility() {
+    chrome.runtime.sendMessage({ action: 'shouldShowIcon' }, (response) => {
+        if (response && response.shouldShow) {
+            // Icons should be shown
+            document.querySelectorAll('input[type="email"]').forEach((input) => {
+                injectIcon(input as HTMLInputElement);
+            });
+
+            // Start observing if not already started
+            if (!isObserverActive) {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+                isObserverActive = true;
+            }
+            console.log('Alias Bridge: Icons enabled');
+        } else {
+            // Icons should be hidden
+            removeAllIcons();
+            if (isObserverActive) {
+                observer.disconnect();
+                isObserverActive = false;
+            }
+            console.log('Alias Bridge: Icons disabled');
+        }
+    });
+}
+
+// Initial check - inject icon on all email inputs
+updateIconVisibility();
+
+// Listen for storage changes to update icon visibility
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.multiProviderSettings) {
+        console.log('Alias Bridge: Settings changed, updating icon visibility');
+        updateIconVisibility();
     }
 });
 

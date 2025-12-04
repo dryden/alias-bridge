@@ -15,6 +15,10 @@ export interface ProviderConfig {
     activeFormat?: string; // 'uuid', 'random', 'domain', 'custom'
     customRule?: CustomRule;
     waitServerConfirmation?: boolean; // Wait for server confirmation before applying email to field
+    domainCatchAllStatus?: Record<string, boolean>; // Cache catch-all status per domain
+    cachedDomains?: string[]; // Cache of available domains
+    domainsCachedAt?: number; // Timestamp of when domains were cached
+    favoriteDomains?: string[]; // Favorite domains shown at the top of selector
 }
 
 export interface CustomRule {
