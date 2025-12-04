@@ -137,30 +137,40 @@ async function shouldShowUI(): Promise<boolean> {
         // For Addy, hide UI if catch-all is disabled for the default domain
         // Because icon/context menu generate invalid aliases that won't work
         if (config.defaultDomain) {
-            // Check cached catch-all status first
+            // Check cached catch-all status
             if (config.domainCatchAllStatus && config.domainCatchAllStatus[config.defaultDomain] !== undefined) {
                 const isCatchAllDisabled = config.domainCatchAllStatus[config.defaultDomain] === false;
                 if (isCatchAllDisabled) {
-                    console.log('Background: Hiding UI - catch-all is disabled for domain (cached):', config.defaultDomain);
+                    console.log('[Background] Hiding UI - catch-all is disabled for domain (cached):', config.defaultDomain);
                     return false;
                 }
             }
         }
 
-        // Also respect the legacy waitServerConfirmation setting
+        // Check waitServerConfirmation setting
+        // If it's true, the UI should be hidden (context menu won't work for catch-all disabled domains)
         if (config.waitServerConfirmation === true) {
-            console.log('Background: Hiding UI - waitServerConfirmation is true');
+            console.log('[Background] Hiding UI - waitServerConfirmation is true (catch-all likely disabled)');
             return false;
         }
     }
+
+    if (providerId === 'simplelogin') {
+        // SimpleLogin always uses server confirmation, so hide context menu
+        console.log('[Background] Hiding UI - SimpleLogin requires server confirmation');
+        return false;
+    }
+
     return true;
 }
 
 // Update Context Menu Visibility
 async function updateContextMenu() {
     const show = await shouldShowUI();
+    console.log('[Background] Updating context menu visibility:', show);
     chrome.contextMenus.update("generate-alias", { visible: show }, () => {
         if (chrome.runtime.lastError) {
+            console.log('[Background] Context menu item does not exist, creating it');
             // Menu might not exist yet, try creating it if show is true
             if (show) {
                 chrome.contextMenus.create({
@@ -190,8 +200,13 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Monitor settings changes to update UI visibility
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.multiProviderSettings) {
-        updateContextMenu();
+    if (area === 'local') {
+        console.log('[Background] Storage changed, keys:', Object.keys(changes));
+        // Update context menu on any storage change related to providers
+        if (changes.multiProviderSettings || changes.licenseKey || changes.isPro) {
+            console.log('[Background] Updating context menu due to settings change');
+            updateContextMenu();
+        }
     }
 });
 

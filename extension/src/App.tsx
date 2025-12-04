@@ -503,7 +503,29 @@ function App() {
                                 onClick={async () => {
                                   setDefaultDomain(domain)
                                   if (providerConfig) {
-                                    const newConfig = { ...providerConfig, defaultDomain: domain }
+                                    let newConfig = { ...providerConfig, defaultDomain: domain }
+
+                                    // For Addy, check if the domain has catch-all enabled
+                                    if (providerConfig.id === 'addy' && providerConfig.token) {
+                                      try {
+                                        const { getDomainDetails } = await import('./services/addy')
+                                        const domainDetails = await getDomainDetails(providerConfig.token, domain)
+                                        if (domainDetails) {
+                                          const isCatchAllEnabled = domainDetails.catch_all === true
+                                          newConfig = {
+                                            ...newConfig,
+                                            waitServerConfirmation: !isCatchAllEnabled,
+                                            domainCatchAllStatus: {
+                                              ...providerConfig.domainCatchAllStatus,
+                                              [domain]: isCatchAllEnabled
+                                            }
+                                          }
+                                        }
+                                      } catch (error) {
+                                        console.error('[App] Error checking catch-all status:', error)
+                                      }
+                                    }
+
                                     setProviderConfig(newConfig)
                                     await providerService.saveProviderConfig(newConfig)
                                   }
@@ -534,7 +556,29 @@ function App() {
                                   onClick={async () => {
                                     setDefaultDomain(domain)
                                     if (providerConfig) {
-                                      const newConfig = { ...providerConfig, defaultDomain: domain }
+                                      let newConfig = { ...providerConfig, defaultDomain: domain }
+
+                                      // For Addy, check if the domain has catch-all enabled
+                                      if (providerConfig.id === 'addy' && providerConfig.token) {
+                                        try {
+                                          const { getDomainDetails } = await import('./services/addy')
+                                          const domainDetails = await getDomainDetails(providerConfig.token, domain)
+                                          if (domainDetails) {
+                                            const isCatchAllEnabled = domainDetails.catch_all === true
+                                            newConfig = {
+                                              ...newConfig,
+                                              waitServerConfirmation: !isCatchAllEnabled,
+                                              domainCatchAllStatus: {
+                                                ...providerConfig.domainCatchAllStatus,
+                                                [domain]: isCatchAllEnabled
+                                              }
+                                            }
+                                          }
+                                        } catch (error) {
+                                          console.error('[App] Error checking catch-all status:', error)
+                                        }
+                                      }
+
                                       setProviderConfig(newConfig)
                                       await providerService.saveProviderConfig(newConfig)
                                     }
