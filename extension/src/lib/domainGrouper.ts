@@ -49,9 +49,9 @@ export function groupDomainsByRoot(
     domains.sort()
   })
 
-  // Sort groups by number of domains (descending)
+  // Sort groups by root domain name (alphabetically)
   const sortedRoots = Array.from(rootMap.entries())
-    .sort((a, b) => b[1].length - a[1].length)
+    .sort((a, b) => a[0].localeCompare(b[0]))
 
   const groups: DomainGroup[] = sortedRoots.map(([root, domainList]) => ({
     label: root,

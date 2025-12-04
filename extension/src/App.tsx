@@ -487,8 +487,8 @@ function App() {
                         {/* Favorites Section */}
                         {favorites.length > 0 && (
                           <>
-                            <div className="px-3 py-2 text-xs font-bold text-amber-400 bg-slate-700 border-b border-slate-600">
-                              ⭐ Favorites
+                            <div className="px-3 py-2 text-xs font-bold text-amber-400 bg-slate-800 border-b border-slate-700/50">
+                              ⭐
                             </div>
                             {favorites.map((domain) => (
                               <button
@@ -517,8 +517,8 @@ function App() {
                         {/* Grouped Domains */}
                         {grouped.groups.map(group => (
                           <div key={group.label}>
-                            <div className="px-3 py-2 text-xs font-bold text-slate-300 bg-slate-700 border-t border-slate-600">
-                              {group.label}
+                            <div className="px-3 py-2 text-xs font-bold text-slate-300 bg-slate-800 border-t border-slate-700/50">
+                              • {group.label}
                             </div>
                             {group.domains.map((domain) => (
                               !favoritesSet.has(domain) && (
