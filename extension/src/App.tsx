@@ -482,38 +482,39 @@ function App() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
-          {['uuid', 'random', 'domain', 'custom'].map((tab) => {
-            // Disable ALL tabs if catch-all is disabled (isCatchAllEnabled === false)
-            // Note: isCatchAllEnabled is null for non-Addy providers or when not yet determined
-            const isDisabledByCatchAll = isCatchAllEnabled === false;
-            const isDisabledByPro = ['domain', 'custom'].includes(tab) && !isPro
-            const isDisabled = isDisabledByCatchAll || isDisabledByPro
+        {/* Tabs - Hidden when catch-all is disabled */}
+        {isCatchAllEnabled !== false && (
+          <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
+            {['uuid', 'random', 'domain', 'custom'].map((tab) => {
+              // Disable ALL tabs if catch-all is disabled (isCatchAllEnabled === false)
+              // Note: isCatchAllEnabled is null for non-Addy providers or when not yet determined
+              const isDisabledByPro = ['domain', 'custom'].includes(tab) && !isPro
+              const isDisabled = isDisabledByPro
 
-            return (
-              <button
-                key={tab}
-                onClick={() => !isDisabled && handleTabChange(tab)}
-                disabled={isDisabled}
-                className={cn(
-                  "flex-1 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize relative",
-                  isDisabled
-                    ? "opacity-40 cursor-not-allowed text-slate-600"
-                    : activeTab === tab
-                      ? "bg-slate-800 text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-300"
-                )}
-              >
-                {tab === 'uuid' ? 'UUID' : tab}
-                {/* Lock icon for pro features or catch-all restriction */}
-                {['domain', 'custom'].includes(tab) && (isDisabledByPro || isDisabledByCatchAll) && (
-                  <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500/50 rounded-full"></span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+              return (
+                <button
+                  key={tab}
+                  onClick={() => !isDisabled && handleTabChange(tab)}
+                  disabled={isDisabled}
+                  className={cn(
+                    "flex-1 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize relative",
+                    isDisabled
+                      ? "opacity-40 cursor-not-allowed text-slate-600"
+                      : activeTab === tab
+                        ? "bg-slate-800 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-300"
+                  )}
+                >
+                  {tab === 'uuid' ? 'UUID' : tab}
+                  {/* Lock icon for pro features */}
+                  {['domain', 'custom'].includes(tab) && isDisabledByPro && (
+                    <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500/50 rounded-full"></span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {/* Generated Alias Input */}
         <div className="space-y-2 mb-2">
@@ -525,22 +526,27 @@ function App() {
                 <label className="text-xs font-semibold text-blue-300">Server Generation Mode</label>
               </div>
 
-              {/* Server Generation Placeholder */}
-              <div className="relative group">
-                <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
-                <div className="relative flex items-center justify-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700 min-h-[100px]">
-                  <div className="flex flex-col items-center justify-center gap-2 py-8">
-                    <div className="w-5 h-5 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin"></div>
-                    <p className="text-xs text-blue-300 font-medium">Click "Copy & Fill" to generate</p>
-                  </div>
-                </div>
-              </div>
-
               {/* Info message for catch-all disabled domains */}
               <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <p className="text-xs text-blue-300 leading-relaxed">
                   This domain doesn't support catch-all aliases. The server will generate a random alias when you click "Copy & Fill".
                 </p>
+              </div>
+
+              {/* Server Generation Placeholder with Animated Arrow */}
+              <div className="relative group">
+                <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
+                <div className="relative flex items-center justify-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700 min-h-[80px]">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    {/* Animated downward arrow */}
+                    <div className="flex flex-col items-center gap-1">
+                      <svg className="w-5 h-5 text-blue-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                      </svg>
+                    </div>
+                    <p className="text-xs text-blue-300 font-medium">Click "Copy & Fill" to generate</p>
+                  </div>
+                </div>
               </div>
             </>
           ) : (
