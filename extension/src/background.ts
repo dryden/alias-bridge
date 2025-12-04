@@ -136,16 +136,20 @@ async function shouldShowUI(): Promise<boolean> {
     if (providerId === 'addy') {
         // For Addy, hide UI if catch-all is disabled for the default domain
         // Because icon/context menu generate invalid aliases that won't work
-        if (config.defaultDomain && config.domainCatchAllStatus) {
-            const isCatchAllDisabled = config.domainCatchAllStatus[config.defaultDomain] === false;
-            if (isCatchAllDisabled) {
-                console.log('Background: Hiding UI - catch-all is disabled for domain:', config.defaultDomain);
-                return false;
+        if (config.defaultDomain) {
+            // Check cached catch-all status first
+            if (config.domainCatchAllStatus && config.domainCatchAllStatus[config.defaultDomain] !== undefined) {
+                const isCatchAllDisabled = config.domainCatchAllStatus[config.defaultDomain] === false;
+                if (isCatchAllDisabled) {
+                    console.log('Background: Hiding UI - catch-all is disabled for domain (cached):', config.defaultDomain);
+                    return false;
+                }
             }
         }
 
         // Also respect the legacy waitServerConfirmation setting
         if (config.waitServerConfirmation === true) {
+            console.log('Background: Hiding UI - waitServerConfirmation is true');
             return false;
         }
     }

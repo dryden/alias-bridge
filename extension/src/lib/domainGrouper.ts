@@ -33,6 +33,7 @@ export function groupDomainsByRoot(
   favorites?: string[]
 ): GroupedDomains {
   const rootMap = new Map<string, string[]>()
+  const domainSet = new Set(domains)
 
   // Group domains by root domain
   domains.forEach(domain => {
@@ -57,8 +58,11 @@ export function groupDomainsByRoot(
     domains: domainList
   }))
 
+  // Filter favorites to only include domains that actually exist
+  const validFavorites = (favorites || []).filter(fav => domainSet.has(fav))
+
   return {
-    favorites: favorites || [],
+    favorites: validFavorites,
     groups
   }
 }

@@ -88,17 +88,3 @@ export function generateLocalPart(options: Omit<AliasGeneratorOptions, 'domain' 
     }
 }
 
-export function generateAlias(options: AliasGeneratorOptions): string {
-    const { domain, username } = options;
-    const localPart = generateLocalPart(options);
-
-    // Determine the email domain part
-    // If the domain is a shared root (fallback), append username.
-    // Otherwise, assume the domain passed is the full domain (e.g. username.anonaddy.com or custom.com)
-    let emailDomain = domain;
-    if (domain === 'anonaddy.com' || domain === 'anonaddy.me') {
-        emailDomain = `${username}.${domain}`;
-    }
-
-    return `${localPart}@${emailDomain}`;
-}

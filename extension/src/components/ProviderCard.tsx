@@ -12,6 +12,7 @@ import { providerRegistry } from '../services/providers/registry';
 import type { ProviderConfig, CustomRule } from '../services/providers/types';
 import { getDomainDetails as fetchDomainDetails } from '../services/addy';
 import { groupDomainsByRoot } from '../lib/domainGrouper';
+import { domainCacheService } from '../services/domain-cache.service';
 
 interface ProviderCardProps {
     providerId: string;
@@ -74,38 +75,50 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
         console.log('[ProviderCard] Checking catch_all status for domain:', domain);
         console.log('[ProviderCard] Token available:', !!token);
         try {
-            const details = await fetchDomainDetails(token, domain);
-            console.log('[ProviderCard] fetchDomainDetails returned:', details);
-            if (details) {
-                console.log('[ProviderCard] Domain details:', details);
-                console.log('[ProviderCard] catch_all value:', details.catch_all);
+            // Try to get from cache first
+            let isCatchAllEnabledValue = await domainCacheService.getCachedCatchAllStatus(providerId, token, domain);
 
-                const isCatchAllEnabled = details.catch_all === true;
-                const newDomainCatchAllStatus = {
-                    ...config?.domainCatchAllStatus,
-                    [domain]: isCatchAllEnabled
-                };
+            if (isCatchAllEnabledValue === null) {
+                // Cache miss, fetch from API
+                console.log('[ProviderCard] Cache miss, fetching from API');
+                const details = await fetchDomainDetails(token, domain);
+                console.log('[ProviderCard] fetchDomainDetails returned:', details);
 
-                if (isCatchAllEnabled) {
-                    // Catch-all enabled: user cannot use server confirmation
-                    console.log('[ProviderCard] Auto-saving waitServerConfirmation: false due to catch_all=true');
-                    setCatchAllStatus('enabled');
-                    await updateConfig({
-                        waitServerConfirmation: false,
-                        domainCatchAllStatus: newDomainCatchAllStatus
-                    });
+                if (details) {
+                    isCatchAllEnabledValue = details.catch_all === true;
+                    // Cache the result
+                    await domainCacheService.setCachedCatchAllStatus(providerId, token, domain, isCatchAllEnabledValue);
+                    console.log('[ProviderCard] Cached catch-all status:', { domain, isCatchAllEnabled: isCatchAllEnabledValue });
                 } else {
-                    // Catch-all disabled: server confirmation is required
-                    console.log('[ProviderCard] Auto-saving waitServerConfirmation: true due to catch_all=false');
-                    setCatchAllStatus('disabled');
-                    await updateConfig({
-                        waitServerConfirmation: true,
-                        domainCatchAllStatus: newDomainCatchAllStatus
-                    });
+                    console.log('[ProviderCard] No details returned for domain:', domain);
+                    setCatchAllStatus(null);
+                    return;
                 }
             } else {
-                console.log('[ProviderCard] No details returned for domain:', domain);
-                setCatchAllStatus(null);
+                console.log('[ProviderCard] Cache hit for domain:', domain, 'isCatchAllEnabled:', isCatchAllEnabledValue);
+            }
+
+            const newDomainCatchAllStatus = {
+                ...config?.domainCatchAllStatus,
+                [domain]: isCatchAllEnabledValue
+            };
+
+            if (isCatchAllEnabledValue) {
+                // Catch-all enabled: user cannot use server confirmation
+                console.log('[ProviderCard] Auto-saving waitServerConfirmation: false due to catch_all=true');
+                setCatchAllStatus('enabled');
+                await updateConfig({
+                    waitServerConfirmation: false,
+                    domainCatchAllStatus: newDomainCatchAllStatus
+                });
+            } else {
+                // Catch-all disabled: server confirmation is required
+                console.log('[ProviderCard] Auto-saving waitServerConfirmation: true due to catch_all=false');
+                setCatchAllStatus('disabled');
+                await updateConfig({
+                    waitServerConfirmation: true,
+                    domainCatchAllStatus: newDomainCatchAllStatus
+                });
             }
         } catch (error) {
             console.error('[ProviderCard] Error checking catch_all status:', error);
@@ -421,7 +434,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                                                         {/* Favorites Section */}
                                                         {favorites.length > 0 && (
                                                             <>
-                                                                <div className="px-4 py-2 text-xs font-bold text-amber-400 bg-slate-900/95 sticky top-0 backdrop-blur-sm z-10">
+                                                                <div className="px-4 py-3 text-xs font-bold text-amber-400 bg-slate-800">
                                                                     ⭐ Favorites
                                                                 </div>
                                                                 {favorites.map((domain) => (
@@ -454,7 +467,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                                                         {/* Grouped by Root Domain (excluding favorites) */}
                                                         {grouped.groups.map(group => (
                                                             <div key={group.label}>
-                                                                <div className="px-4 py-2 text-xs font-bold text-slate-400 bg-slate-900/95 sticky top-0 backdrop-blur-sm z-10 border-t border-slate-800/50">
+                                                                <div className="px-4 py-3 text-xs font-bold text-slate-300 bg-slate-800 border-t border-slate-700">
                                                                     {group.label}
                                                                 </div>
                                                                 {group.domains.map((domain) => (

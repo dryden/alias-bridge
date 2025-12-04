@@ -35,6 +35,10 @@ function SettingsPage() {
             // Load license
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                 chrome.storage.local.get(['licenseKey', 'isPro'], (result) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Failed to load license from storage:', chrome.runtime.lastError)
+                        return
+                    }
                     if (result.licenseKey) {
                         setLicenseKey(result.licenseKey as string)
                         setIsPro(!!result.isPro)
@@ -42,11 +46,15 @@ function SettingsPage() {
                     }
                 })
             } else {
-                const savedLicense = localStorage.getItem('licenseKey')
-                if (savedLicense) {
-                    setLicenseKey(savedLicense)
-                    setIsPro(localStorage.getItem('isPro') === 'true')
-                    if (localStorage.getItem('isPro') === 'true') setLicenseStatus('valid')
+                try {
+                    const savedLicense = localStorage.getItem('licenseKey')
+                    if (savedLicense) {
+                        setLicenseKey(savedLicense)
+                        setIsPro(localStorage.getItem('isPro') === 'true')
+                        if (localStorage.getItem('isPro') === 'true') setLicenseStatus('valid')
+                    }
+                } catch (error) {
+                    console.error('Failed to load license from localStorage:', error)
                 }
             }
         }

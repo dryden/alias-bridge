@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from './components/ui/button'
 import { generateLocalPart, DEFAULT_CUSTOM_RULE, type CustomRule } from './lib/aliasGenerator'
 import { providerService } from './services/providers/provider.service'
 import { providerRegistry } from './services/providers/registry'
 import type { ProviderConfig } from './services/providers/types'
 import { domainCacheService } from './services/domain-cache.service'
-import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown } from 'lucide-react'
+import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown, Check } from 'lucide-react'
 import { cn } from './lib/utils'
+import { groupDomainsByRoot } from './lib/domainGrouper'
 
 function App() {
   // Data State
@@ -30,6 +31,8 @@ function App() {
   const [processingStep, setProcessingStep] = useState<string | null>(null)
   const [isCatchAllEnabled, setIsCatchAllEnabled] = useState<boolean | null>(null)
   const [isRefreshingDomains, setIsRefreshingDomains] = useState(false)
+  const [isDomainDropdownOpen, setIsDomainDropdownOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Fetch domains when provider config changes (with caching)
   useEffect(() => {
@@ -386,6 +389,20 @@ function App() {
     generateAlias()
   }, [activeTab, currentUrl, defaultDomain, customRule, providerConfig])
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDomainDropdownOpen(false)
+      }
+    }
+
+    if (isDomainDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isDomainDropdownOpen])
+
   // Save autoCopy preference
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -442,29 +459,97 @@ function App() {
         {/* Domain Selector */}
         <div className="mb-4">
           <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <select
-                value={defaultDomain}
-                onChange={async (e) => {
-                  const newDomain = e.target.value
-                  setDefaultDomain(newDomain)
-                  if (providerConfig) {
-                    const newConfig = { ...providerConfig, defaultDomain: newDomain }
-                    setProviderConfig(newConfig)
-                    await providerService.saveProviderConfig(newConfig)
-                  }
-                }}
-                className="w-full h-9 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer"
+            <div className="relative flex-1" ref={dropdownRef}>
+              <button
+                onClick={() => setIsDomainDropdownOpen(!isDomainDropdownOpen)}
                 disabled={availableDomains.length === 0}
+                className={cn(
+                  "w-full h-9 rounded-lg border text-xs text-left pl-3 pr-3 flex items-center justify-between transition-colors gap-2",
+                  availableDomains.length === 0
+                    ? "bg-slate-800/50 border-slate-700/50 text-slate-500 cursor-not-allowed"
+                    : "bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                )}
               >
-                {availableDomains.length === 0 && <option>Loading domains...</option>}
-                {availableDomains.map(domain => (
-                  <option key={domain} value={domain}>{domain}</option>
-                ))}
-              </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
-                <ChevronDown className="w-4 h-4" />
-              </div>
+                <span className="truncate flex-1">{defaultDomain || 'Select domain...'}</span>
+                <ChevronDown className={cn("w-4 h-4 text-slate-500 transition-transform flex-shrink-0", isDomainDropdownOpen && "rotate-180")} />
+              </button>
+
+              {/* Grouped Dropdown Menu */}
+              {isDomainDropdownOpen && availableDomains.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto">
+                  {(() => {
+                    const grouped = groupDomainsByRoot(availableDomains, providerConfig?.favoriteDomains)
+                    const favorites = grouped.favorites.length > 0 ? grouped.favorites : []
+                    const favoritesSet = new Set(favorites)
+
+                    return (
+                      <>
+                        {/* Favorites Section */}
+                        {favorites.length > 0 && (
+                          <>
+                            <div className="px-3 py-2 text-xs font-bold text-amber-400 bg-slate-700 border-b border-slate-600">
+                              ⭐ Favorites
+                            </div>
+                            {favorites.map((domain) => (
+                              <button
+                                key={domain}
+                                onClick={async () => {
+                                  setDefaultDomain(domain)
+                                  if (providerConfig) {
+                                    const newConfig = { ...providerConfig, defaultDomain: domain }
+                                    setProviderConfig(newConfig)
+                                    await providerService.saveProviderConfig(newConfig)
+                                  }
+                                  setIsDomainDropdownOpen(false)
+                                }}
+                                className={cn(
+                                  "w-full px-3 py-2 text-xs text-left flex items-center justify-between hover:bg-blue-500/10 transition-colors border-b border-slate-800/30 last:border-0",
+                                  defaultDomain === domain ? "bg-blue-500/15 text-blue-300" : "text-slate-300"
+                                )}
+                              >
+                                <span className="truncate">{domain}</span>
+                                {defaultDomain === domain && <Check className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />}
+                              </button>
+                            ))}
+                          </>
+                        )}
+
+                        {/* Grouped Domains */}
+                        {grouped.groups.map(group => (
+                          <div key={group.label}>
+                            <div className="px-3 py-2 text-xs font-bold text-slate-300 bg-slate-700 border-t border-slate-600">
+                              {group.label}
+                            </div>
+                            {group.domains.map((domain) => (
+                              !favoritesSet.has(domain) && (
+                                <button
+                                  key={domain}
+                                  onClick={async () => {
+                                    setDefaultDomain(domain)
+                                    if (providerConfig) {
+                                      const newConfig = { ...providerConfig, defaultDomain: domain }
+                                      setProviderConfig(newConfig)
+                                      await providerService.saveProviderConfig(newConfig)
+                                    }
+                                    setIsDomainDropdownOpen(false)
+                                  }}
+                                  className={cn(
+                                    "w-full px-3 py-2 text-xs text-left flex items-center justify-between hover:bg-blue-500/10 transition-colors border-b border-slate-800/30 last:border-0",
+                                    defaultDomain === domain ? "bg-blue-500/15 text-blue-300" : "text-slate-300"
+                                  )}
+                                >
+                                  <span className="truncate">{domain}</span>
+                                  {defaultDomain === domain && <Check className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />}
+                                </button>
+                              )
+                            ))}
+                          </div>
+                        ))}
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
             </div>
             <button
               onClick={refreshDomains}
