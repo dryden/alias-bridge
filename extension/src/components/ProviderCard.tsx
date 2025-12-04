@@ -489,7 +489,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                                         {/* Info Box */}
                                         <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
                                             <p className="text-xs text-blue-300 leading-relaxed">
-                                                ℹ️ This domain doesn't support catch-all aliases. Click "Copy & Fill" in the popup to have the server generate one.
+                                                This domain doesn't support catch-all aliases. Click "Copy & Fill" in the popup to have the server generate one.
                                             </p>
                                         </div>
                                     </div>
