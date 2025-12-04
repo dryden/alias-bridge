@@ -5,6 +5,7 @@ import { providerService } from './services/providers/provider.service'
 import { providerRegistry } from './services/providers/registry'
 import type { ProviderConfig } from './services/providers/types'
 import { domainCacheService } from './services/domain-cache.service'
+import { checkAndUpdateCatchAllStatus } from './services/catchAll.helper'
 import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown, Check } from 'lucide-react'
 import { cn } from './lib/utils'
 import { groupDomainsByRoot } from './lib/domainGrouper'
@@ -503,27 +504,12 @@ function App() {
                                 onClick={async () => {
                                   setDefaultDomain(domain)
                                   if (providerConfig) {
-                                    let newConfig = { ...providerConfig, defaultDomain: domain }
+                                    let newConfig: ProviderConfig = { ...providerConfig, defaultDomain: domain }
 
                                     // For Addy, check if the domain has catch-all enabled
                                     if (providerConfig.id === 'addy' && providerConfig.token) {
-                                      try {
-                                        const { getDomainDetails } = await import('./services/addy')
-                                        const domainDetails = await getDomainDetails(providerConfig.token, domain)
-                                        if (domainDetails) {
-                                          const isCatchAllEnabled = domainDetails.catch_all === true
-                                          newConfig = {
-                                            ...newConfig,
-                                            waitServerConfirmation: !isCatchAllEnabled,
-                                            domainCatchAllStatus: {
-                                              ...providerConfig.domainCatchAllStatus,
-                                              [domain]: isCatchAllEnabled
-                                            }
-                                          }
-                                        }
-                                      } catch (error) {
-                                        console.error('[App] Error checking catch-all status:', error)
-                                      }
+                                      const result = await checkAndUpdateCatchAllStatus(providerConfig.id, providerConfig.token, domain, newConfig)
+                                      newConfig = result.newConfig
                                     }
 
                                     setProviderConfig(newConfig)
@@ -556,27 +542,12 @@ function App() {
                                   onClick={async () => {
                                     setDefaultDomain(domain)
                                     if (providerConfig) {
-                                      let newConfig = { ...providerConfig, defaultDomain: domain }
+                                      let newConfig: ProviderConfig = { ...providerConfig, defaultDomain: domain }
 
                                       // For Addy, check if the domain has catch-all enabled
                                       if (providerConfig.id === 'addy' && providerConfig.token) {
-                                        try {
-                                          const { getDomainDetails } = await import('./services/addy')
-                                          const domainDetails = await getDomainDetails(providerConfig.token, domain)
-                                          if (domainDetails) {
-                                            const isCatchAllEnabled = domainDetails.catch_all === true
-                                            newConfig = {
-                                              ...newConfig,
-                                              waitServerConfirmation: !isCatchAllEnabled,
-                                              domainCatchAllStatus: {
-                                                ...providerConfig.domainCatchAllStatus,
-                                                [domain]: isCatchAllEnabled
-                                              }
-                                            }
-                                          }
-                                        } catch (error) {
-                                          console.error('[App] Error checking catch-all status:', error)
-                                        }
+                                        const result = await checkAndUpdateCatchAllStatus(providerConfig.id, providerConfig.token, domain, newConfig)
+                                        newConfig = result.newConfig
                                       }
 
                                       setProviderConfig(newConfig)
@@ -618,12 +589,12 @@ function App() {
           </div>
         </div>
 
-        {/* Tabs - Hidden when catch-all is disabled */}
+        {/* Tabs - Hidden only when catch-all is explicitly disabled */}
         {isCatchAllEnabled !== false && (
           <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
             {['uuid', 'random', 'domain', 'custom'].map((tab) => {
-              // Disable ALL tabs if catch-all is disabled (isCatchAllEnabled === false)
-              // Note: isCatchAllEnabled is null for non-Addy providers or when not yet determined
+              // Disable tabs only if catch-all is explicitly disabled (false)
+              // Allow tabs for catch-all enabled (true) or unknown (null)
               const isDisabledByPro = ['domain', 'custom'].includes(tab) && !isPro
               const isDisabled = isDisabledByPro
 
@@ -640,6 +611,7 @@ function App() {
                         ? "bg-slate-800 text-white shadow-sm"
                         : "text-slate-500 hover:text-slate-300"
                   )}
+                  title={isCatchAllEnabled === null && tab !== 'uuid' && tab !== 'random' && !['domain', 'custom'].includes(tab) ? "Proceeding with caution - catch-all status is unknown" : ""}
                 >
                   {tab === 'uuid' ? 'UUID' : tab}
                   {/* Lock icon for pro features */}
@@ -681,6 +653,55 @@ function App() {
                       </svg>
                     </div>
                     <p className="text-xs text-blue-300 font-medium">Click "Copy & Fill" to generate</p>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : isCatchAllEnabled === null ? (
+            <>
+              {/* Unknown Catch-all Status Mode Label */}
+              <div className="flex items-center gap-2 ml-1 group">
+                <div className="w-2 h-2 bg-amber-400 rounded-full shadow-lg shadow-amber-400/50"></div>
+                <label className="text-xs font-semibold text-amber-300">Catch-all Status Unknown</label>
+                {/* Info icon with tooltip */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="p-0.5 text-amber-400/60 hover:text-amber-400 transition-colors"
+                    title="Unable to fetch catch-all status from Addy.io. If you have catch-all enabled for this domain, you can safely generate a custom email below."
+                  >
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                  </button>
+                  {/* Tooltip on hover */}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-slate-800 border border-slate-700 rounded-lg p-2 w-48 text-xs text-slate-200 z-10 pointer-events-none">
+                    <p>Unable to fetch catch-all status from Addy.io. If you have catch-all enabled for this domain, you can safely generate a custom email below.</p>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-800"></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Normal alias generation UI with warning */}
+              <label className="text-xs font-medium text-slate-400 ml-1">Generated Alias</label>
+
+              <div className="relative group">
+                <div className="absolute inset-0 bg-amber-500/5 rounded-xl blur-sm group-hover:bg-amber-500/10 transition-all"></div>
+                <div className="relative flex items-center bg-slate-950 border border-amber-500/20 rounded-xl overflow-hidden transition-colors group-hover:border-amber-500/30">
+                  <textarea
+                    value={generatedAlias}
+                    readOnly
+                    rows={3}
+                    className="w-full bg-transparent border-none py-3.5 pl-4 pr-10 text-xs font-mono text-slate-200 focus:ring-0 placeholder:text-slate-600 resize-none leading-relaxed break-all"
+                  />
+                  <div className="absolute right-2 relative">
+                    <button
+                      onClick={generateAlias}
+                      className="p-2 rounded-lg transition-colors text-slate-500 hover:text-white hover:bg-slate-800"
+                      title="Regenerate alias"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               </div>

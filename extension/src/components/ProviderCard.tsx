@@ -10,9 +10,9 @@ import { cn } from '../lib/utils';
 import { providerService } from '../services/providers/provider.service';
 import { providerRegistry } from '../services/providers/registry';
 import type { ProviderConfig, CustomRule } from '../services/providers/types';
-import { getDomainDetails as fetchDomainDetails } from '../services/addy';
 import { groupDomainsByRoot } from '../lib/domainGrouper';
-import { domainCacheService } from '../services/domain-cache.service';
+
+import { checkAndUpdateCatchAllStatus } from '../services/catchAll.helper';
 
 interface ProviderCardProps {
     providerId: string;
@@ -72,58 +72,19 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
     }, [config?.defaultDomain, providerId, token]);
 
     const checkDomainCatchAllStatus = async (domain: string) => {
-        console.log('[ProviderCard] Checking catch_all status for domain:', domain);
-        console.log('[ProviderCard] Token available:', !!token);
-        try {
-            // Try to get from cache first
-            let isCatchAllEnabledValue = await domainCacheService.getCachedCatchAllStatus(providerId, token, domain);
+        if (!config) return;
 
-            if (isCatchAllEnabledValue === null) {
-                // Cache miss, fetch from API
-                console.log('[ProviderCard] Cache miss, fetching from API');
-                const details = await fetchDomainDetails(token, domain);
-                console.log('[ProviderCard] fetchDomainDetails returned:', details);
+        const result = await checkAndUpdateCatchAllStatus(providerId, token, domain, config);
 
-                if (details) {
-                    isCatchAllEnabledValue = details.catch_all === true;
-                    // Cache the result
-                    await domainCacheService.setCachedCatchAllStatus(providerId, token, domain, isCatchAllEnabledValue);
-                    console.log('[ProviderCard] Cached catch-all status:', { domain, isCatchAllEnabled: isCatchAllEnabledValue });
-                } else {
-                    console.log('[ProviderCard] No details returned for domain:', domain);
-                    setCatchAllStatus(null);
-                    return;
-                }
-            } else {
-                console.log('[ProviderCard] Cache hit for domain:', domain, 'isCatchAllEnabled:', isCatchAllEnabledValue);
-            }
-
-            const newDomainCatchAllStatus = {
-                ...config?.domainCatchAllStatus,
-                [domain]: isCatchAllEnabledValue
-            };
-
-            if (isCatchAllEnabledValue) {
-                // Catch-all enabled: user cannot use server confirmation
-                console.log('[ProviderCard] Auto-saving waitServerConfirmation: false due to catch_all=true');
-                setCatchAllStatus('enabled');
-                await updateConfig({
-                    waitServerConfirmation: false,
-                    domainCatchAllStatus: newDomainCatchAllStatus
-                });
-            } else {
-                // Catch-all disabled: server confirmation is required
-                console.log('[ProviderCard] Auto-saving waitServerConfirmation: true due to catch_all=false');
-                setCatchAllStatus('disabled');
-                await updateConfig({
-                    waitServerConfirmation: true,
-                    domainCatchAllStatus: newDomainCatchAllStatus
-                });
-            }
-        } catch (error) {
-            console.error('[ProviderCard] Error checking catch_all status:', error);
+        if (result.isCatchAllEnabled === true) {
+            setCatchAllStatus('enabled');
+        } else if (result.isCatchAllEnabled === false) {
+            setCatchAllStatus('disabled');
+        } else {
             setCatchAllStatus(null);
         }
+
+        await updateConfig(result.newConfig);
     };
 
     const handleRefreshDomains = async () => {
