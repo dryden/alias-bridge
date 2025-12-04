@@ -5,6 +5,8 @@ import type { ProviderConfig, MultiProviderSettings } from './services/providers
 
 console.log("Alias Bridge background script loaded");
 
+import { providerService } from './services/providers/provider.service';
+
 // Initialize Providers
 const providers = {
     addy: new AddyProvider(),
@@ -58,10 +60,29 @@ async function handleGenerateAlias(url: string): Promise<string | null> {
             return null;
         }
 
-        const defaultDomain = config.defaultDomain || '';
+        let defaultDomain = config.defaultDomain || '';
         if (!defaultDomain) {
-            console.warn('No default domain configured');
-            return null;
+            console.log('Background: No default domain configured, attempting to fetch...');
+            try {
+                const domains = await providerService.getProviderDomains(providerId, config.token);
+                if (domains && domains.length > 0) {
+                    defaultDomain = domains[0];
+                    console.log('Background: Auto-selected default domain:', defaultDomain);
+
+                    // Update config
+                    const newConfig = { ...config, defaultDomain };
+                    await providerService.saveProviderConfig(newConfig);
+
+                    // Update local config variable for this execution
+                    config.defaultDomain = defaultDomain;
+                } else {
+                    console.warn('Background: Failed to fetch domains or no domains available');
+                    return null;
+                }
+            } catch (err) {
+                console.error('Background: Error fetching domains:', err);
+                return null;
+            }
         }
 
         // Generate Local Part

@@ -19,6 +19,7 @@ function App() {
   const [autoCopy, setAutoCopy] = useState(true)
   const [customRule, setCustomRule] = useState<CustomRule>(DEFAULT_CUSTOM_RULE)
   const [defaultDomain, setDefaultDomain] = useState('')
+  const [availableDomains, setAvailableDomains] = useState<string[]>([])
 
   // License State
   const [isPro, setIsPro] = useState(false)
@@ -27,6 +28,38 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState<string | null>(null)
   const [isCatchAllEnabled, setIsCatchAllEnabled] = useState<boolean | null>(null)
+
+  // Fetch domains when provider config changes
+  useEffect(() => {
+    const fetchDomains = async () => {
+      if (providerConfig && providerConfig.token) {
+        try {
+          const domains = await providerService.getProviderDomains(providerConfig.id, providerConfig.token)
+          setAvailableDomains(domains)
+
+          // Ensure defaultDomain is in the list, if not select the first one
+          if (domains.length > 0 && (!defaultDomain || !domains.includes(defaultDomain))) {
+            const newDefault = domains[0]
+            setDefaultDomain(newDefault)
+
+            // Update config in storage
+            const newConfig = { ...providerConfig, defaultDomain: newDefault }
+            // Update local state to reflect change (optional, but good for consistency)
+            // Note: calling setProviderConfig might trigger re-renders but not this effect if deps are id/token
+            setProviderConfig(newConfig)
+            await providerService.saveProviderConfig(newConfig)
+            console.log('[App] Auto-selected default domain:', newDefault)
+          }
+        } catch (error) {
+          console.error('Failed to fetch domains:', error)
+          setAvailableDomains([])
+        }
+      } else {
+        setAvailableDomains([])
+      }
+    }
+    fetchDomains()
+  }, [providerConfig?.id, providerConfig?.token])
 
   // Handlers
   const openSettings = () => {
@@ -383,6 +416,34 @@ function App() {
 
       {/* Main Card */}
       <div className="bg-slate-900 rounded-2xl p-4 shadow-lg border border-slate-800/50 mb-6 mx-5 mt-5">
+        {/* Domain Selector */}
+        <div className="mb-4">
+          <div className="relative">
+            <select
+              value={defaultDomain}
+              onChange={async (e) => {
+                const newDomain = e.target.value
+                setDefaultDomain(newDomain)
+                if (providerConfig) {
+                  const newConfig = { ...providerConfig, defaultDomain: newDomain }
+                  setProviderConfig(newConfig)
+                  await providerService.saveProviderConfig(newConfig)
+                }
+              }}
+              className="w-full h-9 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer"
+              disabled={availableDomains.length === 0}
+            >
+              {availableDomains.length === 0 && <option>Loading domains...</option>}
+              {availableDomains.map(domain => (
+                <option key={domain} value={domain}>{domain}</option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+              <ChevronDown className="w-4 h-4" />
+            </div>
+          </div>
+        </div>
+
         {/* Tabs */}
         <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
           {['uuid', 'random', 'domain', 'custom'].map((tab) => {
@@ -444,7 +505,7 @@ function App() {
           {isCatchAllEnabled === false && (
             <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
               <p className="text-xs text-blue-300 leading-relaxed">
-                Custom aliases not supported. Click 'Copy & Fill' to generate.
+                This domain has catch-all disabled, so custom aliases are not supported. Click "Copy & Fill" to generate.
               </p>
             </div>
           )}

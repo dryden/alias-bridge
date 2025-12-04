@@ -11,9 +11,9 @@ export const providerService = {
                     resolve((result[STORAGE_KEY] as MultiProviderSettings) || { providers: {}, defaultProviderId: '' });
                 });
             } else {
-                // Fallback for dev/testing
-                const saved = localStorage.getItem(STORAGE_KEY);
-                resolve(saved ? JSON.parse(saved) : { providers: {}, defaultProviderId: '' });
+                // If chrome.storage is unavailable, return default settings
+                // (Service Worker doesn't have access to localStorage)
+                resolve({ providers: {}, defaultProviderId: '' });
             }
         });
     },
@@ -23,7 +23,8 @@ export const providerService = {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                 chrome.storage.local.set({ [STORAGE_KEY]: settings }, () => resolve());
             } else {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+                // If chrome.storage is unavailable, just resolve
+                // (Service Worker doesn't have access to localStorage)
                 resolve();
             }
         });
