@@ -11,7 +11,7 @@ interface CacheEntry {
 
 type CacheStore = Record<string, CacheEntry>
 
-const CACHE_TTL = 1000 * 60 * 60 // 1 hour in milliseconds
+const CACHE_TTL = 1000 * 60 * 60 * 24 * 30 // 30 days in milliseconds (effectively permanent as requested)
 const STORAGE_KEY = 'domainCache'
 
 export const domainCacheService = {

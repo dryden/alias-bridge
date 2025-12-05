@@ -7,9 +7,11 @@ import type { ProviderConfig } from './services/providers/types'
 import { domainCacheService } from './services/domain-cache.service'
 import { checkAndUpdateCatchAllStatus } from './services/catchAll.helper'
 import { logger } from './services/logger'
-import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown, Check } from 'lucide-react'
+import { Shield, Settings, RefreshCw, Star, Crown, Copy, ChevronDown, Check, X, Sparkles } from 'lucide-react'
 import { cn } from './lib/utils'
 import { groupDomainsByRoot } from './lib/domainGrouper'
+
+import { CHANGELOGS, type ChangelogEntry } from './constants/changelog'
 
 function App() {
   // Data State
@@ -30,11 +32,19 @@ function App() {
 
   // UI State
   const [isProcessing, setIsProcessing] = useState(false)
+  const [showSpinner, setShowSpinner] = useState(false)
+  const [showEnergyBar, setShowEnergyBar] = useState(false)
+  const [isFadingOut, setIsFadingOut] = useState(false)
   const [processingStep, setProcessingStep] = useState<string | null>(null)
   const [isCatchAllEnabled, setIsCatchAllEnabled] = useState<boolean | null>(null)
   const [isRefreshingDomains, setIsRefreshingDomains] = useState(false)
   const [isDomainDropdownOpen, setIsDomainDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Changelog State
+  const [showChangelog, setShowChangelog] = useState(false)
+  const [hasNewVersion, setHasNewVersion] = useState(false)
+  const [currentVersionInfo, setCurrentVersionInfo] = useState<ChangelogEntry | null>(null)
 
   // Fetch domains when provider config changes (with caching)
   useEffect(() => {
@@ -210,6 +220,10 @@ function App() {
 
   const handleCopyAndFill = async () => {
     setIsProcessing(true);
+    setShowEnergyBar(true);
+    // Only show spinner if processing takes longer than 400ms
+    const timerId = setTimeout(() => setShowSpinner(true), 400);
+
     setProcessingStep(null);
     try {
       logger.info('App', '========== Alias Bridge: Copy & Fill Started ==========');
@@ -292,8 +306,22 @@ function App() {
       logger.error('App', '========== Alias Bridge: Copy & Fill Failed ==========');
       logger.error('App', 'Error:', err);
       setProcessingStep(null);
+      setProcessingStep(null);
     } finally {
+      clearTimeout(timerId);
+      setShowSpinner(false);
       setIsProcessing(false);
+      // 1. Wait for completion "Zip" (250ms) + Display Time (150ms) = 400ms total hold
+      setTimeout(() => {
+        // 2. Trigger Fade Out
+        setIsFadingOut(true);
+
+        // 3. After Fade Out (150ms), Reset to idle state (instant scale 0)
+        setTimeout(() => {
+          setShowEnergyBar(false);
+          setIsFadingOut(false);
+        }, 150);
+      }, 400);
     }
   }
 
@@ -341,6 +369,23 @@ function App() {
         })
       } else {
         setCurrentUrl('https://example.com/signup')
+      }
+
+      // Check for updates
+      if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
+        const manifest = chrome.runtime.getManifest()
+        const currentVersion = manifest.version
+        const changelogEntry = CHANGELOGS.find(c => c.version === currentVersion)
+
+        if (changelogEntry) {
+          setCurrentVersionInfo(changelogEntry)
+          chrome.storage.local.get(['lastSeenVersion'], (result) => {
+            const lastSeen = result.lastSeenVersion
+            if (lastSeen !== currentVersion) {
+              setHasNewVersion(true)
+            }
+          })
+        }
       }
     }
     init()
@@ -395,6 +440,18 @@ function App() {
     }
   }, [autoCopy])
 
+  const handleOpenChangelog = () => {
+    if (!currentVersionInfo) return
+    setShowChangelog(true)
+    setHasNewVersion(false)
+
+    // Update last seen version
+    if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
+      const version = chrome.runtime.getManifest().version
+      chrome.storage.local.set({ lastSeenVersion: version })
+    }
+  }
+
   // Main View
   if (providers.length === 0) {
     return (
@@ -438,6 +495,53 @@ function App() {
           </h1>
         </div>
       </div>
+
+      {/* Changelog Modal */}
+      {showChangelog && currentVersionInfo && (
+        <div className="absolute inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[450px]">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-bold text-slate-100">What's New in v{currentVersionInfo.version}</h3>
+              </div>
+              <button
+                onClick={() => setShowChangelog(false)}
+                className="text-slate-500 hover:text-slate-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1">
+              <ul className="space-y-3">
+                {currentVersionInfo.content.map((item, index) => (
+                  <li key={index} className="flex items-start gap-3 text-sm text-slate-300">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0" />
+                    <span className="leading-relaxed">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {!isPro && (
+              <div className="p-4 bg-gradient-to-t from-blue-900/20 to-transparent border-t border-slate-800">
+                <button
+                  onClick={() => window.open('https://buy.polar.sh/polar_cl_PFI9AO6jGDqXB5ZvrRtnQBJ7nqccnijY9Y3Kv07QS6E', '_blank')}
+                  className="w-full group text-center space-y-1"
+                >
+                  <p className="text-xs text-slate-400 group-hover:text-amber-400 transition-colors">
+                    Your support motivates me to continue developing new features
+                  </p>
+                  <div className="text-xs font-bold text-blue-400 group-hover:text-blue-300 flex items-center justify-center gap-1">
+                    Upgrade to Pro <Crown className="w-3 h-3" />
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Card */}
       <div className="bg-slate-900 rounded-2xl p-4 shadow-lg border border-slate-800/50 mb-6 mx-5 mt-5">
@@ -726,22 +830,39 @@ function App() {
       <div className="flex items-center gap-3 mt-auto mb-2 px-5">
         <Button
           className={cn(
-            "flex-1 h-12 rounded-xl text-sm font-semibold shadow-lg transition-all",
+            "flex-1 h-12 rounded-xl text-sm font-semibold shadow-lg transition-all relative overflow-hidden",
             isProcessing
-              ? "bg-blue-600/60 hover:bg-blue-600/60 text-white cursor-wait opacity-75"
+              ? "bg-blue-600 text-white cursor-wait pointer-events-none"
               : "bg-blue-600 hover:bg-blue-500 text-white hover:scale-[1.02] active:scale-[0.98]"
           )}
           onClick={handleCopyAndFill}
-          disabled={isProcessing}
         >
-          {isProcessing ? (
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              Processing...
-            </div>
-          ) : (
-            'Copy & Fill'
-          )}
+          {/* Energy Bar Effect */}
+          <div className={cn(
+            "absolute inset-0 bg-white/40 origin-left ease-out",
+            // Scale Logic
+            showEnergyBar ? "scale-x-100" : "scale-x-0",
+            // Opacity Logic
+            isFadingOut ? "opacity-0" : "opacity-100",
+
+            // Transition Logic
+            isFadingOut
+              ? "transition-opacity duration-150" // Phase 3: Fade out (opacity only)
+              : showEnergyBar
+                ? cn("transition-transform", isProcessing ? "duration-[500ms]" : "duration-[250ms]") // Phase 1 & 2: Grow/Zip (transform only)
+                : "duration-0" // Phase 4: Reset (instant)
+          )} />
+
+          <div className="relative z-10 flex items-center justify-center gap-2">
+            {showSpinner ? (
+              <>
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                {processingStep || 'Processing...'}
+              </>
+            ) : (
+              'Copy & Fill'
+            )}
+          </div>
         </Button>
         <Button
           variant="secondary"
@@ -774,7 +895,22 @@ function App() {
           ) : (
             <Star className="w-3.5 h-3.5 fill-amber-500/20" />
           )}
-          <span>v{typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : '1.0.0'}</span>
+          <button
+            onClick={handleOpenChangelog}
+            disabled={!currentVersionInfo}
+            className={cn(
+              "flex items-center gap-1.5 transition-colors relative",
+              currentVersionInfo ? "hover:text-amber-400 cursor-pointer" : "cursor-default"
+            )}
+          >
+            <span>v{typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : '1.0.0'}</span>
+            {hasNewVersion && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </div>

@@ -128,16 +128,15 @@ function injectIcon(input: HTMLInputElement) {
                     input.dispatchEvent(new Event('change', { bubbles: true }));
                     input.focus();
 
-                    // Copy to clipboard
-                    await navigator.clipboard.writeText(alias);
+                    // Copy to clipboard (non-fatal)
+                    try {
+                        await navigator.clipboard.writeText(alias);
+                    } catch (clipboardError) {
+                        logger.warn('content', 'Failed to copy alias to clipboard (non-fatal):', clipboardError);
+                    }
 
                     // Show success feedback
                     iconContainer.innerHTML = originalContent;
-                    const originalBg = iconContainer.style.backgroundColor;
-                    iconContainer.style.backgroundColor = '#22c55e'; // Green
-                    setTimeout(() => {
-                        iconContainer.style.backgroundColor = originalBg;
-                    }, 1000);
                     return; // Success
                 } else {
                     logger.warn('content', 'Failed to generate alias', response?.error);
@@ -166,12 +165,6 @@ function injectIcon(input: HTMLInputElement) {
         // All attempts failed
         logger.error('content', 'Error requesting alias after retries:', lastError);
         iconContainer.innerHTML = originalContent;
-        // Show error feedback (red)
-        const originalBg = iconContainer.style.backgroundColor;
-        iconContainer.style.backgroundColor = '#ef4444'; // Red
-        setTimeout(() => {
-            iconContainer.style.backgroundColor = originalBg;
-        }, 1000);
     });
 }
 

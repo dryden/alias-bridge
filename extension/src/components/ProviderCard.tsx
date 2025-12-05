@@ -187,7 +187,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
 
         const updatedFavorites = isFavorited
             ? favorites.filter(d => d !== domain) // Remove from favorites
-            : [...favorites, domain].slice(0, 5) // Add to favorites, keep max 5
+            : [...favorites, domain].slice(0, 50) // Add to favorites, keep max 50
 
         const newConfig = { ...config, favoriteDomains: updatedFavorites };
         setConfig(newConfig);
@@ -489,7 +489,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                                         {/* Info Box */}
                                         <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
                                             <p className="text-xs text-blue-300 leading-relaxed">
-                                                This domain doesn't support catch-all aliases. Click "Copy & Fill" in the popup to have the server generate one.
+                                                This domain doesn't support catch-all aliases. Click "Copy & Fill" in the popup to have the server generate one. You can update the "Default Alias Format" in your <a href="https://app.addy.io/settings" target="_blank" rel="noreferrer" className="underline hover:text-blue-200">addy.io settings</a>.
                                             </p>
                                         </div>
                                     </div>
