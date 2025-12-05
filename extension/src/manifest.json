@@ -47,12 +47,10 @@
     "permissions": [
         "storage",
         "activeTab",
-        "scripting",
         "clipboardWrite",
         "contextMenus"
     ],
     "host_permissions": [
-        "<all_urls>",
         "https://api.polar.sh/*"
     ]
 }

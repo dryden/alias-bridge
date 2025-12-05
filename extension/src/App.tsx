@@ -265,7 +265,6 @@ function App() {
         }
       }
 
-      setProcessingStep('Copying to clipboard...');
       logger.debug('App', '[Step 2/3] Copying to clipboard');
       await navigator.clipboard.writeText(aliasToUse);
       logger.debug('App', '  ✓ Alias copied to clipboard:', aliasToUse);
@@ -275,38 +274,15 @@ function App() {
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab.id) {
-          chrome.scripting.executeScript({
-            target: { tabId: tab.id, allFrames: true },
-            func: (email) => {
-              console.log('  - Looking for email input field...');
-              let activeElement = document.activeElement as HTMLInputElement;
-              if (!activeElement || activeElement === document.body || (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA')) {
-                const emailInput = document.querySelector('input[type="email"]');
-                if (emailInput) {
-                  activeElement = emailInput as HTMLInputElement;
-                  console.log('  - Found email input field');
-                } else {
-                  const firstInput = document.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"])');
-                  if (firstInput) {
-                    activeElement = firstInput as HTMLInputElement;
-                    console.log('  - Found first input field (fallback)');
-                  } else {
-                    console.log('  ✗ No input field found on page');
-                  }
-                }
-              }
-
-              if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-                console.log('  - Setting value to:', email);
-                (activeElement as HTMLInputElement).value = email;
-                activeElement.dispatchEvent(new Event('input', { bubbles: true }));
-                activeElement.dispatchEvent(new Event('change', { bubbles: true }));
-                activeElement.focus();
-                console.log('  ✓ Email filled and field focused');
-              }
-            },
-            args: [aliasToUse]
-          });
+          try {
+            await chrome.tabs.sendMessage(tab.id, {
+              action: "fillAliasFromPopup",
+              alias: aliasToUse
+            });
+            logger.debug('App', '  ✓ Fill message sent to content script');
+          } catch (error) {
+            logger.warn('App', '  ! Failed to send fill message (content script might not be loaded):', error);
+          }
         }
       }
 
