@@ -64,3 +64,43 @@ export function generateDomainAlias(url: string, username: string, domain: strin
     const siteDomain = getDomainFromUrl(url).split('.')[0];
     return `${siteDomain}@${username}.${domain}`;
 }
+
+export function getRegistrableDomainFromUrl(url: string): string {
+    try {
+        const hostname = new URL(url).hostname;
+        // Remove www. prefix if present
+        const cleanHostname = hostname.replace(/^www\./, '');
+
+        // Split by dot
+        const parts = cleanHostname.split('.');
+
+        // If we have 2 parts (e.g. google.com), return the whole thing
+        if (parts.length === 2) {
+            return cleanHostname;
+        }
+
+        // If we have one part (localhost), return it
+        if (parts.length === 1) {
+            return cleanHostname;
+        }
+
+        // Common 2-part TLDs (simplified list)
+        // These are TLDs that are composed of two parts, like .co.uk
+        const twoPartTlds = ['co.uk', 'co.jp', 'com.tw', 'org.uk', 'net.au', 'com.au', 'ac.uk'];
+        const lastTwo = parts.slice(-2).join('.');
+
+        if (twoPartTlds.includes(lastTwo)) {
+            // e.g. google.co.uk -> parts: [google, co, uk]
+            // We want last 3 parts: google.co.uk
+            if (parts.length >= 3) {
+                return parts.slice(-3).join('.');
+            }
+        }
+
+        // Standard case: sub.domain.com -> domain.com
+        // Return last 2 parts
+        return parts.slice(-2).join('.');
+    } catch (e) {
+        return '';
+    }
+}

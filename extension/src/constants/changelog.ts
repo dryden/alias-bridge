@@ -5,6 +5,12 @@ export interface ChangelogEntry {
 
 export const CHANGELOGS: ChangelogEntry[] = [
     {
+        version: "2.2.0",
+        content: [
+            "For catch-all disabled domains, aliases generated on Addy.io now include the source website in the description for better tracking."
+        ]
+    },
+    {
         version: "2.1.0",
         content: [
             "Introduced a changelog section (this one!) to easily track improvements.",
@@ -16,7 +22,6 @@ export const CHANGELOGS: ChangelogEntry[] = [
     {
         version: "2.0.1",
         content: [
-            "Now you can see what's new in Alias Bridge directly from the popup!",
             "Improved alias generation performance.",
             "Fixed issue with clipboard copy on some sites."
         ]

@@ -12,6 +12,7 @@ import { cn } from './lib/utils'
 import { groupDomainsByRoot } from './lib/domainGrouper'
 
 import { CHANGELOGS, type ChangelogEntry } from './constants/changelog'
+import { getRegistrableDomainFromUrl } from './lib/domain'
 
 function App() {
   // Data State
@@ -253,8 +254,9 @@ function App() {
             // This triggers server-side generation in AddyProvider
             const aliasToCreate = (providerConfig.id === 'addy' && isCatchAllEnabled === false) ? '' : generatedAlias;
             const domainForCreation = (providerConfig.id === 'addy' && isCatchAllEnabled === false) ? defaultDomain : undefined;
+            const hostname = getRegistrableDomainFromUrl(currentUrl);
 
-            const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation);
+            const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation, hostname);
             if (result.success) {
               logger.debug('App', '  ✓ Alias successfully created on server');
               // Use server-returned alias if available

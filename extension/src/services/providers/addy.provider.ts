@@ -23,7 +23,7 @@ export class AddyProvider implements AliasProvider {
         return `${localPart}@${domain}`;
     }
 
-    async createAlias(alias: string, token: string, domain?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
+    async createAlias(alias: string, token: string, domain?: string, hostname?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
             logger.debug('addy.provider', 'Creating alias:', { alias, domain });
 
@@ -42,7 +42,7 @@ export class AddyProvider implements AliasProvider {
                     body: JSON.stringify({
                         domain: domain,
                         format: 'uuid', // Default to UUID for server-generated aliases
-                        description: 'Created by Alias Bridge'
+                        description: hostname ? `Created by Alias Bridge for ${hostname}` : 'Created by Alias Bridge'
                     })
                 });
 
@@ -133,7 +133,7 @@ export class AddyProvider implements AliasProvider {
                     local_part: localPart,
                     domain: aliasDomain,
                     format: 'custom',
-                    description: 'Created by Alias Bridge'
+                    description: hostname ? `Created by Alias Bridge for ${hostname}` : 'Created by Alias Bridge'
                 })
             });
 

@@ -93,7 +93,7 @@ export class SimpleLoginProvider implements AliasProvider {
     }
 
 
-    async createAlias(alias: string, token: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
+    async createAlias(alias: string, token: string, _domain?: string, hostname?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
             logger.debug('simplelogin.provider', 'Creating alias on server:', alias);
 
@@ -200,7 +200,7 @@ export class SimpleLoginProvider implements AliasProvider {
                         alias_prefix: prefix,
                         signed_suffix: signedSuffix,
                         mailbox_ids: [mailboxId],
-                        note: 'Created by Alias Bridge'
+                        note: hostname ? `Created by Alias Bridge for ${hostname}` : 'Created by Alias Bridge'
                     })
                 });
 
@@ -232,7 +232,7 @@ export class SimpleLoginProvider implements AliasProvider {
                     body: JSON.stringify({
                         alias: alias,
                         mailbox_ids: [mailboxId],
-                        note: 'Created by Alias Bridge'
+                        note: hostname ? `Created by Alias Bridge for ${hostname}` : 'Created by Alias Bridge'
                     })
                 });
 
