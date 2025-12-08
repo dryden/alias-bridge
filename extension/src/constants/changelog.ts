@@ -5,6 +5,12 @@ export interface ChangelogEntry {
 
 export const CHANGELOGS: ChangelogEntry[] = [
     {
+        version: "2.2.1",
+        content: [
+            "Expanded domain parsing support for APAC regions (e.g., .hk, .sg, .kr, .cn) and common platforms (e.g., github.io, vercel.app)."
+        ]
+    },
+    {
         version: "2.2.0",
         content: [
             "For catch-all disabled domains, aliases generated on Addy.io now include the source website in the description for better tracking."

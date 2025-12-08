@@ -18,7 +18,15 @@ export function getDomainFromUrl(url: string): string {
         // For now, let's try to grab the part before the last 1 or 2 parts depending on length.
 
         // Common 2-part TLDs (simplified list)
-        const twoPartTlds = ['co.uk', 'co.jp', 'com.tw', 'org.uk', 'net.au'];
+        const twoPartTlds = [
+            'co.uk', 'co.jp', 'com.tw', 'org.tw', 'edu.tw', 'gov.tw', 'net.tw', 'org.uk', 'net.au',
+            'com.hk', 'org.hk', 'edu.hk',
+            'com.sg', 'org.sg', 'edu.sg',
+            'ac.kr', 'co.kr', 'go.kr', 'or.kr',
+            'com.cn', 'edu.cn', 'gov.cn', 'org.cn',
+            'com.my', 'edu.my', 'gov.my',
+            'github.io', 'vercel.app', 'netlify.app', 'herokuapp.com'
+        ];
         const lastTwo = parts.slice(-2).join('.');
 
         if (twoPartTlds.includes(lastTwo)) {
@@ -86,7 +94,15 @@ export function getRegistrableDomainFromUrl(url: string): string {
 
         // Common 2-part TLDs (simplified list)
         // These are TLDs that are composed of two parts, like .co.uk
-        const twoPartTlds = ['co.uk', 'co.jp', 'com.tw', 'org.uk', 'net.au', 'com.au', 'ac.uk'];
+        const twoPartTlds = [
+            'co.uk', 'co.jp', 'com.tw', 'org.tw', 'edu.tw', 'gov.tw', 'net.tw', 'org.uk', 'net.au', 'com.au', 'ac.uk',
+            'com.hk', 'org.hk', 'edu.hk',
+            'com.sg', 'org.sg', 'edu.sg',
+            'ac.kr', 'co.kr', 'go.kr', 'or.kr',
+            'com.cn', 'edu.cn', 'gov.cn', 'org.cn',
+            'com.my', 'edu.my', 'gov.my',
+            'github.io', 'vercel.app', 'netlify.app', 'herokuapp.com'
+        ];
         const lastTwo = parts.slice(-2).join('.');
 
         if (twoPartTlds.includes(lastTwo)) {
