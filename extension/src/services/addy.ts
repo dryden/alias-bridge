@@ -14,7 +14,7 @@ export interface AddyAccountDetails {
 
 export interface AddyDomainDetails {
     domain: string;
-    catch_all: boolean;
+    catch_all: boolean | null;
     [key: string]: any;
 }
 
@@ -42,11 +42,14 @@ export const normalizeBaseUrl = (url?: string): string => {
     }
 
     // Otherwise append /api/v1
-    return `${cleaned}/api/v1`;
+    const result = `${cleaned}/api/v1`;
+    // logger.debug('addy', 'normalizeBaseUrl', { input: url, output: result });
+    return result;
 };
 
 export const verifyToken = async (token: string, baseUrl?: string): Promise<AddyAccountDetails> => {
     const apiUrl = normalizeBaseUrl(baseUrl);
+    logger.info('addy', 'verifyToken using API URL:', apiUrl);
     const response = await fetch(`${apiUrl}/account-details`, {
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -56,7 +59,17 @@ export const verifyToken = async (token: string, baseUrl?: string): Promise<Addy
     });
 
     if (!response.ok) {
-        throw new Error('Invalid token or network error');
+        // Try to parse error message
+        try {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `API Error: ${response.status}`);
+        } catch (e) {
+            // Check if it's a network error (like DNS resolution failure)
+            if (e instanceof Error && e.message !== 'Invalid token or network error') {
+                throw e;
+            }
+            throw new Error(`Connection failed: ${response.status} ${response.statusText}`);
+        }
     }
 
     const data = await response.json();
@@ -72,10 +85,107 @@ export const SHARED_DOMAINS = [
     'addy.io'
 ];
 
+// Cache for instance context to prevent redundant API calls
+let instanceContextCache: {
+    data: { username?: string, effectiveSharedDomains: string[], defaultAliasDomain?: string },
+    timestamp: number,
+    key: string // composite key of apiUrl + token (or just apiUrl if token is stable per session logic)
+} | null = null;
+let instanceContextPromise: Promise<{ username?: string, effectiveSharedDomains: string[], defaultAliasDomain?: string }> | null = null;
+
+// Helper to fetch instance context (active shared domains, etc.)
+// This is the Source of Truth for what domains are "shared" on this instance
+const fetchInstanceContext = async (apiUrl: string, headers: any): Promise<{ username?: string, effectiveSharedDomains: string[], defaultAliasDomain?: string }> => {
+    const cacheKey = apiUrl; // Simple key, assuming headers/token don't change rapidly for the same URL in this context
+    const now = Date.now();
+    const CACHE_TTL = 10000; // 10 seconds cache
+
+    // Return cached data if valid
+    if (instanceContextCache && instanceContextCache.key === cacheKey && (now - instanceContextCache.timestamp < CACHE_TTL)) {
+        return instanceContextCache.data;
+    }
+
+    // Return pending promise if in flight
+    if (instanceContextPromise) {
+        return instanceContextPromise;
+    }
+
+    instanceContextPromise = (async () => {
+        // Only include default cloud domains if we are actually ON the cloud instance
+        // For self-hosted, we should rely purely on what the API tells us
+        // Robust check for cloud instance (handle potential slash differences or alternatives)
+        const isCloudInstance = apiUrl.includes('app.addy.io') || apiUrl.includes('app.anonaddy.com') || apiUrl === DEFAULT_API_URL;
+
+        let effectiveSharedDomains = isCloudInstance ? [...SHARED_DOMAINS] : [];
+        let username: string | undefined;
+        let defaultAliasDomain: string | undefined;
+
+        try {
+            const accountRes = await fetch(`${apiUrl}/account-details`, { headers });
+            if (accountRes.ok) {
+                const accountData = await accountRes.json();
+                username = accountData.data?.username;
+                const activeShared = accountData.data?.active_shared_domains;
+                defaultAliasDomain = accountData.data?.default_alias_domain;
+
+                logger.info('Addy', 'FetchInstanceContext details:', {
+                    username,
+                    activeSharedCount: Array.isArray(activeShared) ? activeShared.length : 'not-array',
+                    defaultAliasDomain
+                });
+
+                if (Array.isArray(activeShared)) {
+                    effectiveSharedDomains = [...effectiveSharedDomains, ...activeShared];
+                }
+
+                // Heuristic for Self-Hosted instances where active_shared_domains might be empty
+                // If default_alias_domain is present and clearly NOT a username subdomain (e.g. "unbox.at" vs "009.unbox.at"),
+                // we assume it is a Shared Root Domain. This ensures we can generate "009.unbox.at".
+                if (defaultAliasDomain && username) {
+                    const userPrefix = `${username}.`.toLowerCase();
+                    // If default domain is NOT a subdomain of the user, treat it as a root shared domain
+                    if (!defaultAliasDomain.toLowerCase().startsWith(userPrefix)) {
+                        effectiveSharedDomains.push(defaultAliasDomain);
+                    }
+                }
+                // defaultAliasDomain is NOT a shared root, so don't add it to effectiveSharedDomains
+                // It will be returned separately to be added to the final list directly
+
+                // Deduplicate
+                effectiveSharedDomains = [...new Set(effectiveSharedDomains)];
+            } else {
+                logger.warn('Addy', 'FetchInstanceContext failed response:', accountRes.status);
+            }
+        } catch (err) {
+            logger.warn('Addy', 'FetchInstanceContext exception:', err);
+        }
+
+        const result = { username, effectiveSharedDomains, defaultAliasDomain };
+
+        // Update cache
+        instanceContextCache = {
+            data: result,
+            timestamp: Date.now(),
+            key: cacheKey
+        };
+        instanceContextPromise = null; // Clear promise
+
+        return result;
+    })();
+
+    return instanceContextPromise;
+};
+
+export const resetInstanceContextCache = () => {
+    instanceContextCache = null;
+    instanceContextPromise = null;
+};
+
+
 export const getDomainDetails = async (token: string, domain: string, baseUrl?: string): Promise<AddyDomainDetails | null> => {
     try {
         const apiUrl = normalizeBaseUrl(baseUrl);
-        logger.debug('Addy', `getDomainDetails - Fetching details for: ${domain} (API: ${apiUrl})`);
+        logger.info('addy', `getDomainDetails - Fetching details for: ${domain} (API: ${apiUrl})`);
 
         const headers = {
             'Authorization': `Bearer ${token}`,
@@ -83,79 +193,85 @@ export const getDomainDetails = async (token: string, domain: string, baseUrl?: 
             'Accept': 'application/json'
         };
 
-        // First, try to fetch custom domains
-        const domainsResponse = await fetch(`${apiUrl}/domains`, { headers });
-        if (domainsResponse.ok) {
-            const domainsData = await domainsResponse.json();
-            logger.debug('Addy', 'Custom domains fetched:', domainsData.data?.map((d: any) => ({ domain: d.domain, catch_all: d.catch_all })));
+        // 1. Try to fetch custom domains first (most common for power users)
+        try {
+            const domainsResponse = await fetch(`${apiUrl}/domains`, { headers });
+            if (domainsResponse.ok) {
+                const domainsData = await domainsResponse.json();
+                const domainData = domainsData.data?.find((d: any) => d.domain === domain);
 
-            // Try exact match in custom domains
-            let domainData = domainsData.data?.find((d: any) => d.domain === domain);
-
-            if (domainData) {
-                logger.debug('Addy', 'Found custom domain:', { domain: domainData.domain, catch_all: domainData.catch_all });
-                return {
-                    domain: domainData.domain,
-                    catch_all: domainData.catch_all ?? true,
-                    ...domainData
-                };
-            }
-        }
-
-        // If not found in custom domains, check if it's a username with shared domains (e.g., 0309.addy.io)
-        // Extract potential username from the domain
-        const parts = domain.split('.');
-        logger.debug('Addy', 'Parsing domain:', { domain, parts });
-        if (parts.length >= 2) {
-            const potentialUsername = parts[0];
-            const potentialSharedDomain = parts.slice(1).join('.');
-            logger.debug('Addy', 'Extracted potential username and domain:', { potentialUsername, potentialSharedDomain });
-            logger.debug('Addy', 'Is potentialSharedDomain in SHARED_DOMAINS?', SHARED_DOMAINS.includes(potentialSharedDomain));
-
-            // Check if the second part is a shared domain
-            if (SHARED_DOMAINS.includes(potentialSharedDomain)) {
-                logger.debug('Addy', 'Detected username.shared domain format:', { username: potentialUsername, shared: potentialSharedDomain });
-
-                // Fetch usernames to get catch_all status
-                const usernamesResponse = await fetch(`${apiUrl}/usernames`, { headers });
-                if (usernamesResponse.ok) {
-                    const usernamesData = await usernamesResponse.json();
-                    logger.debug('Addy', 'Usernames fetched:', usernamesData.data?.map((u: any) => ({ username: u.username, catch_all: u.catch_all })));
-
-                    const usernameData = usernamesData.data?.find((u: any) => u.username === potentialUsername);
-
-                    if (usernameData) {
-                        logger.debug('Addy', 'Found username:', { username: usernameData.username, catch_all: usernameData.catch_all });
-                        // Important: preserve false values - use undefined check instead of nullish coalescing
-                        const catchAll = typeof usernameData.catch_all === 'boolean' ? usernameData.catch_all : true;
-                        logger.debug('Addy', 'Username catch_all status (after type check):', catchAll);
-                        return {
-                            domain,
-                            catch_all: catchAll,
-                            ...usernameData
-                        };
-                    }
+                if (domainData) {
+                    logger.debug('Addy', 'Found custom domain:', { domain: domainData.domain, catch_all: domainData.catch_all });
+                    return {
+                        domain: domainData.domain,
+                        catch_all: domainData.catch_all ?? true,
+                        ...domainData
+                    };
                 }
-
-                // If username not found in the list, default to true for catch_all
-                logger.debug('Addy', 'Username not found in list, defaulting catch_all to true');
-                return {
-                    domain,
-                    catch_all: true
-                };
             }
+        } catch (e) {
+            logger.warn('Addy', 'Failed to fetch custom domains', e);
         }
 
-        // Check if it's a root shared domain (like anonaddy.com, anonaddy.me, etc.)
-        if (SHARED_DOMAINS.includes(domain)) {
-            logger.debug('Addy', 'Domain is a root shared domain:', domain);
+        // 2. Fetch Instance Context (Shared Domains)
+        const { effectiveSharedDomains } = await fetchInstanceContext(apiUrl, headers);
+
+        // 3. Check if it's a Shared Domain (Root or Subdomain)
+        const parts = domain.split('.');
+        const potentialSharedDomain = parts.length >= 2 ? parts.slice(1).join('.') : null;
+
+        const isRootShared = effectiveSharedDomains.includes(domain);
+        const isSubdomainShared = potentialSharedDomain && effectiveSharedDomains.includes(potentialSharedDomain);
+
+        if (isRootShared || isSubdomainShared) {
+            logger.debug('Addy', 'Identified as shared domain type:', { domain, isRootShared, isSubdomainShared });
+
+            // Shared domains usually don't support catch-all, UNLESS it's a username subdomain (user.shared.com)
+            // AND the user has specifically enabled it.
+            // Default to null (unknown) to avoid falsely blocking generation if API fails.
+            let catchAllStatus: boolean | null = null;
+
+            if (isSubdomainShared) {
+                const potentialUsername = parts[0];
+                try {
+                    const usernamesRes = await fetch(`${apiUrl}/usernames`, { headers });
+                    if (usernamesRes.ok) {
+                        const usernamesData = await usernamesRes.json();
+                        const userEntry = usernamesData.data?.find((u: any) => u.username === potentialUsername);
+                        if (userEntry) {
+                            // Addy.io API returns catch_all as boolean for usernames
+                            catchAllStatus = !!userEntry.catch_all;
+                            logger.debug('Addy', `Found username ${potentialUsername} settings, catch-all:`, catchAllStatus);
+                        } else {
+                            // User not found in list -> likely not a valid username subdomain for this account
+                            // Could be a coincidence string. Safe to assume false, OR keep as null?
+                            // Safest is false if we are sure we fetched the Full List and they weren't there.
+                            // But usually fetch returns all usernames.
+                            logger.debug('Addy', `Username ${potentialUsername} not found in account usernames list.`);
+                            catchAllStatus = false;
+                        }
+                    } else {
+                        // API Error fetching usernames -> Unknown status
+                        logger.warn('Addy', 'Failed to fetch usernames, status:', usernamesRes.status);
+                        catchAllStatus = null;
+                    }
+                } catch (err) {
+                    logger.warn('Addy', 'Exception fetching usernames for catch-all check', err);
+                    catchAllStatus = null;
+                }
+            } else {
+                // Root shared domains (e.g. anonaddy.com) never support catch-all for users
+                catchAllStatus = false;
+            }
+
             return {
-                domain,
-                catch_all: false
+                domain: domain,
+                catch_all: catchAllStatus,
+                shared: true
             };
         }
 
-        logger.debug('Addy', 'Domain not found and not a recognized pattern:', domain);
+        logger.debug('Addy', 'Domain details not found:', domain);
         return null;
 
     } catch (error) {
@@ -173,10 +289,10 @@ export const getDomains = async (token: string, baseUrl?: string): Promise<strin
             'Accept': 'application/json'
         };
 
-        // 1. Fetch Account Details (for main username)
-        const accountRes = await fetch(`${apiUrl}/account-details`, { headers });
-        const accountData = await accountRes.json();
-        const mainUsername = accountData.data?.username;
+        // 1. Fetch Instance Context (Username & Shared Domains)
+        const { username: mainUsername, effectiveSharedDomains, defaultAliasDomain } = await fetchInstanceContext(apiUrl, headers);
+
+        logger.info('Addy', 'Instance context fetched:', { mainUsername, effectiveSharedDomainsCount: effectiveSharedDomains.length, defaultAliasDomain });
 
         // 2. Fetch Additional Usernames
         const usernamesRes = await fetch(`${apiUrl}/usernames`, { headers });
@@ -195,7 +311,7 @@ export const getDomains = async (token: string, baseUrl?: string): Promise<strin
 
         // Add User Subdomains (username.shareddomain)
         for (const username of allUsernames) {
-            for (const shared of SHARED_DOMAINS) {
+            for (const shared of effectiveSharedDomains) {
                 fullList.push(`${username}.${shared}`);
             }
         }
@@ -203,14 +319,23 @@ export const getDomains = async (token: string, baseUrl?: string): Promise<strin
         // Add Custom Domains
         fullList.push(...customDomains);
 
-        // Add Shared Domains (Root) - Added back as per request, to be shown as optional
-        fullList.push(...SHARED_DOMAINS);
+        // Add Default Alias Domain (often username.shared.com)
+        if (defaultAliasDomain) {
+            fullList.push(defaultAliasDomain);
+        }
 
-        return fullList;
+        // Add Shared Domains (Root) - though usually users can't create aliases here directly without subdomain
+        // but included for completeness or if instance allows
+        fullList.push(...effectiveSharedDomains);
+
+        // Deduplicate final list
+        const finalList = [...new Set(fullList)];
+        logger.info('Addy', 'Final domain list count:', finalList.length);
+        return finalList;
 
     } catch (error) {
         logger.error('Addy', 'Failed to fetch domains', error);
-        // Fallback
+        // Fallback for extreme failure cases
         return ['addy.io', 'anonaddy.com', 'anonaddy.me'];
     }
 };

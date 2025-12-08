@@ -50,6 +50,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
     const [isSelfHosted, setIsSelfHosted] = useState(false);
     const [showToken, setShowToken] = useState(false);
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [errorMessage, setErrorMessage] = useState('');
     const [availableDomains, setAvailableDomains] = useState<string[]>([]);
 
     const [expandedSection, setExpandedSection] = useState<'domain' | 'format' | null>(null);
@@ -155,27 +156,35 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
         setStatus('loading');
         // If self-hosted is disabled, clear baseUrl
         const effectiveBaseUrl = isSelfHosted ? baseUrl : undefined;
+        logger.info('ProviderCard', 'handleVerify', { isSelfHosted, baseUrl, effectiveBaseUrl });
 
-        const isValid = await providerService.verifyProviderToken(providerId, token, effectiveBaseUrl);
-        if (isValid) {
-            setStatus('success');
-            const newConfig: ProviderConfig = {
-                id: providerId,
-                enabled: true,
-                token: token,
-                baseUrl: effectiveBaseUrl,
-                defaultDomain: config?.defaultDomain,
-                activeFormat: config?.activeFormat || 'uuid',
-                customRule: config?.customRule || DEFAULT_CUSTOM_RULE,
-                domainCatchAllStatus: config?.domainCatchAllStatus || {},
-                favoriteDomains: config?.favoriteDomains || []
-            };
-            setConfig(newConfig);
-            await providerService.saveProviderConfig(newConfig);
-            fetchDomains(token);
-            if (onConfigChange) onConfigChange();
-        } else {
+        try {
+            const isValid = await providerService.verifyProviderToken(providerId, token, effectiveBaseUrl);
+            if (isValid) {
+                setStatus('success');
+                setErrorMessage('');
+                const newConfig: ProviderConfig = {
+                    id: providerId,
+                    enabled: true,
+                    token: token,
+                    baseUrl: effectiveBaseUrl,
+                    defaultDomain: config?.defaultDomain,
+                    activeFormat: config?.activeFormat || 'uuid',
+                    customRule: config?.customRule || DEFAULT_CUSTOM_RULE,
+                    domainCatchAllStatus: config?.domainCatchAllStatus || {},
+                    favoriteDomains: config?.favoriteDomains || []
+                };
+                setConfig(newConfig);
+                await providerService.saveProviderConfig(newConfig);
+                fetchDomains(token);
+                if (onConfigChange) onConfigChange();
+            } else {
+                setStatus('error');
+                setErrorMessage('Verification failed. Please check your token and URL.');
+            }
+        } catch (error) {
             setStatus('error');
+            setErrorMessage(error instanceof Error ? error.message : 'Unknown error occurred');
         }
     };
 
@@ -342,6 +351,11 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                                     </div>
                                     <div className="text-xs text-green-500 flex items-center gap-1">
                                         <Check className="w-3 h-3" /> Connected
+                                        {isSelfHosted && baseUrl && (
+                                            <span className="text-slate-500 ml-1 truncate max-w-[150px]" title={baseUrl}>
+                                                ({new URL(baseUrl).hostname})
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -504,7 +518,7 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                                         {/* Info Box */}
                                         <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
                                             <p className="text-xs text-blue-300 leading-relaxed">
-                                                This domain doesn't support catch-all aliases. Click "Copy & Fill" in the popup to have the server generate one. You can update the "Default Alias Format" in your <a href="https://app.addy.io/settings" target="_blank" rel="noreferrer" className="underline hover:text-blue-200">addy.io settings</a>.
+                                                This domain doesn't support catch-all aliases. Click "Copy & Fill" in the popup to have the server generate one.
                                             </p>
                                         </div>
                                     </div>
@@ -700,80 +714,98 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                     </div>
                 ) : (
                     <div className="p-4 space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor={`token-${providerId}`} className="text-slate-300">{provider.name} API Token</Label>
-                            <div className="relative">
-                                <Input
-                                    id={`token-${providerId}`}
-                                    type={showToken ? "text" : "password"}
-                                    value={token}
-                                    onChange={(e) => setToken(e.target.value)}
-                                    placeholder="Paste your token here"
-                                    className="bg-slate-950 border-slate-800 text-slate-100 placeholder:text-slate-600 pr-10"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowToken(!showToken)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                                >
-                                    {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label>API Token</Label>
+                                <div className="relative">
+                                    <Input
+                                        type={showToken ? "text" : "password"}
+                                        value={token}
+                                        onChange={(e) => setToken(e.target.value)}
+                                        placeholder="Paste your token here"
+                                        className="pr-10 bg-slate-950 border-slate-800 focus:border-blue-500/50"
+                                    />
+                                    <button
+                                        onClick={() => setShowToken(!showToken)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                                    >
+                                        {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                                <div className="flex justify-between">
+                                    <a
+                                        href={providerId === 'addy' ? "https://app.addy.io/settings/api" : "https://app.simplelogin.io/dashboard/api_key"}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                                    >
+                                        Log in to {provider.name} and create a new API key
+                                    </a>
+                                </div>
                             </div>
-                            {providerId === 'addy' && (
-                                <a href="https://app.addy.io/settings/api" target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:text-blue-400 hover:underline inline-block">
-                                    Log in to Addy.io and create a new API key
-                                </a>
-                            )}
-                            {providerId === 'simplelogin' && (
-                                <a href="https://app.simplelogin.io/dashboard/api_key" target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:text-blue-400 hover:underline inline-block">
-                                    Log in to SimpleLogin and create a new API key
-                                </a>
-                            )}
 
-                            {/* Advanced / Self Hosted Option */}
                             {providerId === 'addy' && (
-                                <div className="pt-2 border-t border-slate-800 mt-2">
-                                    <div className="flex items-center gap-2 mb-2">
+                                <div className="space-y-4 pt-2 border-t border-slate-800">
+                                    <div className="flex items-center space-x-2">
                                         <Checkbox
                                             id="self-hosted"
                                             checked={isSelfHosted}
-                                            onCheckedChange={(c) => setIsSelfHosted(!!c)}
-                                            className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                                            onCheckedChange={(checked) => {
+                                                setIsSelfHosted(checked as boolean);
+                                                if (!checked) setBaseUrl('');
+                                            }}
+                                            className="border-slate-700 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                                         />
-                                        <Label htmlFor="self-hosted" className="text-xs text-slate-300 cursor-pointer">
+                                        <Label
+                                            htmlFor="self-hosted"
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer text-slate-300"
+                                        >
                                             Self-hosted Instance
                                         </Label>
                                     </div>
 
                                     {isSelfHosted && (
-                                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                                            <Label htmlFor="base-url" className="text-slate-300 text-xs">Base URL</Label>
+                                        <div className="space-y-2 animate-in slide-in-from-top-2 duration-200">
+                                            <Label>Instance URL</Label>
                                             <Input
-                                                id="base-url"
-                                                type="text"
+                                                type="url"
                                                 value={baseUrl}
                                                 onChange={(e) => setBaseUrl(e.target.value)}
-                                                placeholder="https://app.addy.io"
-                                                className="bg-slate-950 border-slate-800 text-slate-100 placeholder:text-slate-600 text-xs h-8"
+                                                placeholder="https://addy.example.com"
+                                                className="bg-slate-950 border-slate-800 focus:border-blue-500/50"
                                             />
-                                            <p className="text-[10px] text-slate-500">
-                                                Enter the root URL of your instance (e.g. https://my-addy.com).
+                                            <p className="text-xs text-slate-500">
+                                                Enter the full URL of your self-hosted instance
                                             </p>
                                         </div>
                                     )}
                                 </div>
                             )}
+
+                            {errorMessage && (
+                                <div className="p-3 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+                                    {errorMessage}
+                                </div>
+                            )}
+
+                            <Button
+                                className="w-full bg-blue-600 hover:bg-blue-500"
+                                onClick={handleVerify}
+                                disabled={status === 'loading' || !token}
+                            >
+                                {status === 'loading' ? (
+                                    <>
+                                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                        Connecting...
+                                    </>
+                                ) : (
+                                    'Connect'
+                                )}
+                            </Button>
                         </div>
-                        <Button
-                            className="w-full bg-blue-600 hover:bg-blue-500 text-white"
-                            onClick={handleVerify}
-                            disabled={status === 'loading' || !token}
-                        >
-                            {status === 'loading' ? 'Verifying...' : 'Connect'}
-                        </Button>
                     </div>
                 )}
             </CardContent>
-        </Card >
+        </Card>
     );
 }

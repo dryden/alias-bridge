@@ -93,7 +93,7 @@ export class SimpleLoginProvider implements AliasProvider {
     }
 
 
-    async createAlias(alias: string, token: string, _domain?: string, hostname?: string, _baseUrl?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
+    async createAlias(alias: string, token: string, _domain?: string, hostname?: string, _baseUrl?: string, _format?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
             logger.debug('simplelogin.provider', 'Creating alias on server:', alias);
 

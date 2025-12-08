@@ -256,7 +256,10 @@ function App() {
             const domainForCreation = (providerConfig.id === 'addy' && isCatchAllEnabled === false) ? defaultDomain : undefined;
             const hostname = getRegistrableDomainFromUrl(currentUrl);
 
-            const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation, hostname, providerConfig.baseUrl);
+            // Pass the active format (uuid/random) for server generation
+            const format = activeTab;
+
+            const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation, hostname, providerConfig.baseUrl, format);
             if (result.success) {
               logger.debug('App', '  ✓ Alias successfully created on server');
               // Use server-returned alias if available
@@ -404,6 +407,23 @@ function App() {
         if (updated) {
           setProviderConfig(updated)
           logger.debug('App', 'Provider config updated:', updated)
+        } else {
+          // Current provider was removed or disabled
+          logger.debug('App', 'Current provider removed, switching...')
+          if (enabled.length > 0) {
+            // Switch to first available provider
+            const next = enabled[0]
+            setSelectedProviderId(next.id)
+            setProviderConfig(next)
+            // Reset active tab for new provider
+            setActiveTab(next.activeFormat || 'uuid')
+            setDefaultDomain(next.defaultDomain || '')
+            if (next.customRule) setCustomRule(next.customRule)
+          } else {
+            // No providers left
+            setSelectedProviderId('')
+            setProviderConfig(null)
+          }
         }
       }
     }
@@ -415,6 +435,15 @@ function App() {
       }
     }
   }, [selectedProviderId])
+
+  // Effect to reset active tab if we switch to a domain that doesn't support the current tab
+  // e.g. Catch-all disabled domains don't support 'domain' or 'custom' tabs
+  useEffect(() => {
+    if (isCatchAllEnabled === false && (activeTab === 'domain' || activeTab === 'custom')) {
+      logger.debug('App', 'Catch-all disabled, resetting forbidden active tab to uuid', { from: activeTab });
+      setActiveTab('uuid');
+    }
+  }, [isCatchAllEnabled, activeTab]);
 
   // Generate alias when dependencies change
   useEffect(() => {
@@ -472,7 +501,7 @@ function App() {
           <div className="space-y-2">
             <h2 className="text-lg font-semibold text-slate-200">Setup Required</h2>
             <p className="text-sm text-slate-400 max-w-[250px]">
-              Please configure a provider (Addy.io or SimpleLogin) in settings to start generating aliases.
+              Please configure a provider (Addy.io official or selfhost) in settings to start generating aliases.
             </p>
           </div>
           <Button
@@ -517,7 +546,7 @@ function App() {
 
             <div className="p-5 overflow-y-auto flex-1">
               <ul className="space-y-3">
-                {currentVersionInfo.content.map((item, index) => (
+                {(currentVersionInfo.changes || currentVersionInfo.content || []).map((item, index) => (
                   <li key={index} className="flex items-start gap-3 text-sm text-slate-300">
                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0" />
                     <span className="leading-relaxed">{item}</span>
@@ -658,10 +687,10 @@ function App() {
             </div>
             <button
               onClick={refreshDomains}
-              disabled={isRefreshingDomains || availableDomains.length === 0}
+              disabled={isRefreshingDomains}
               className={cn(
                 "p-2 rounded-lg transition-colors",
-                isRefreshingDomains || availableDomains.length === 0
+                isRefreshingDomains
                   ? "text-slate-600 cursor-not-allowed"
                   : "text-slate-500 hover:text-white hover:bg-slate-800"
               )}
@@ -673,39 +702,44 @@ function App() {
         </div>
 
         {/* Tabs - Hidden only when catch-all is explicitly disabled */}
-        {isCatchAllEnabled !== false && (
-          <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
-            {['uuid', 'random', 'domain', 'custom'].map((tab) => {
-              // Disable tabs only if catch-all is explicitly disabled (false)
-              // Allow tabs for catch-all enabled (true) or unknown (null)
-              const isDisabledByPro = ['domain', 'custom'].includes(tab) && !isPro
-              const isDisabled = isDisabledByPro
+        <div className="bg-slate-950/50 p-1 rounded-lg flex mb-6">
+          {['uuid', 'random', 'domain', 'custom'].map((tab) => {
+            // Logic for disabling tabs:
+            // 1. Pro features restriction (domain, custom)
+            const isDisabledByPro = ['domain', 'custom'].includes(tab) && !isPro
 
-              return (
-                <button
-                  key={tab}
-                  onClick={() => !isDisabled && handleTabChange(tab)}
-                  disabled={isDisabled}
-                  className={cn(
-                    "flex-1 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize relative",
-                    isDisabled
-                      ? "opacity-40 cursor-not-allowed text-slate-600"
-                      : activeTab === tab
-                        ? "bg-slate-800 text-white shadow-sm"
-                        : "text-slate-500 hover:text-slate-300"
-                  )}
-                  title={isCatchAllEnabled === null && tab !== 'uuid' && tab !== 'random' && !['domain', 'custom'].includes(tab) ? "Proceeding with caution - catch-all status is unknown" : ""}
-                >
-                  {tab === 'uuid' ? 'UUID' : tab}
-                  {/* Lock icon for pro features */}
-                  {['domain', 'custom'].includes(tab) && isDisabledByPro && (
-                    <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500/50 rounded-full"></span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
+            // 2. Catch-all disabled restriction (Server Generation Mode)
+            // In Server Gen Mode, we ONLY allow 'uuid' and 'random'
+            // So disable 'domain' and 'custom' if catch-all is explicitly false
+            const isDisabledBycatchAll = (isCatchAllEnabled as boolean | null) === false && ['domain', 'custom'].includes(tab)
+
+            const isDisabled = isDisabledByPro || isDisabledBycatchAll
+
+            return (
+              <button
+                key={tab}
+                onClick={() => !isDisabled && handleTabChange(tab)}
+                disabled={isDisabled}
+                className={cn(
+                  "flex-1 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize relative",
+                  isDisabled
+                    ? "opacity-40 cursor-not-allowed text-slate-600"
+                    : activeTab === tab
+                      ? "bg-slate-800 text-white shadow-sm"
+                      : "text-slate-500 hover:text-slate-300"
+                )}
+                title={isCatchAllEnabled === null && tab !== 'uuid' && tab !== 'random' && !['domain', 'custom'].includes(tab) ? "Proceeding with caution - catch-all status is unknown" : ""}
+              >
+                {tab === 'uuid' ? 'UUID' : tab}
+                {/* Lock icon for pro features */}
+                {['domain', 'custom'].includes(tab) && isDisabledByPro && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500/50 rounded-full"></span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
 
         {/* Generated Alias Input */}
         <div className="space-y-2 mb-2">
@@ -717,25 +751,23 @@ function App() {
                 <label className="text-xs font-semibold text-blue-300">Server Generation Mode</label>
               </div>
 
-              {/* Info message for catch-all disabled domains */}
-              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p className="text-xs text-blue-300 leading-relaxed">
-                  This domain doesn't support catch-all aliases. The server will generate a random alias when you click "Copy & Fill".
-                </p>
-              </div>
-
               {/* Server Generation Placeholder with Animated Arrow */}
-              <div className="relative group">
+              <div className="relative group mt-2">
                 <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
-                <div className="relative flex items-center justify-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700 min-h-[80px]">
-                  <div className="flex flex-col items-center justify-center gap-3">
-                    {/* Animated downward arrow */}
+                <div className="relative flex items-center justify-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700 min-h-[120px] py-4">
+                  <div className="flex flex-col items-center justify-center gap-4">
+                    {/* Text first */}
+                    <p className="text-xs text-blue-300 font-medium text-center px-4 leading-relaxed">
+                      Server Generation Mode
+                      <br />
+                      Click "Copy & Fill" to generate.
+                    </p>
+                    {/* Animated downward arrow below text */}
                     <div className="flex flex-col items-center gap-1">
                       <svg className="w-5 h-5 text-blue-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                       </svg>
                     </div>
-                    <p className="text-xs text-blue-300 font-medium">Click "Copy & Fill" to generate</p>
                   </div>
                 </div>
               </div>
@@ -766,9 +798,9 @@ function App() {
               </div>
 
               {/* Normal alias generation UI with warning */}
-              <label className="text-xs font-medium text-slate-400 ml-1">Generated Alias</label>
+              <label className="text-xs font-medium text-slate-400 ml-1 mt-2 block">Generated Alias</label>
 
-              <div className="relative group">
+              <div className="relative group mt-1">
                 <div className="absolute inset-0 bg-amber-500/5 rounded-xl blur-sm group-hover:bg-amber-500/10 transition-all"></div>
                 <div className="relative flex items-center bg-slate-950 border border-amber-500/20 rounded-xl overflow-hidden transition-colors group-hover:border-amber-500/30">
                   <textarea
@@ -791,9 +823,10 @@ function App() {
             </>
           ) : (
             <>
+              {/* Standard Mode */}
               <label className="text-xs font-medium text-slate-400 ml-1">Generated Alias</label>
 
-              <div className="relative group">
+              <div className="relative group mt-1">
                 <div className="absolute inset-0 bg-blue-500/5 rounded-xl blur-sm group-hover:bg-blue-500/10 transition-all"></div>
                 <div className="relative flex items-center bg-slate-950 border border-slate-800 rounded-xl overflow-hidden transition-colors group-hover:border-slate-700">
                   <textarea
@@ -816,106 +849,119 @@ function App() {
             </>
           )}
         </div>
+
       </div>
+
 
       {/* Processing Status */}
-      {isProcessing && processingStep && (
-        <div className="mx-5 mb-3 px-3 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-xs text-blue-300">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-            {processingStep}
+      {
+        isProcessing && processingStep && (
+          <div className="mx-5 mb-3 px-3 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-xs text-blue-300">
+            <div className="flex items-center gap-2">
+              {showSpinner && (
+                <div className="animate-spin rounded-full h-3 w-3 border-2 border-current border-t-transparent" />
+              )}
+              <span>{processingStep}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-3 mt-auto mb-2 px-5">
-        <Button
-          className={cn(
-            "flex-1 h-12 rounded-xl text-sm font-semibold shadow-lg transition-all relative overflow-hidden",
-            isProcessing
-              ? "bg-blue-600 text-white cursor-wait pointer-events-none"
-              : "bg-blue-600 hover:bg-blue-500 text-white hover:scale-[1.02] active:scale-[0.98]"
-          )}
-          onClick={handleCopyAndFill}
-        >
-          {/* Energy Bar Effect */}
-          <div className={cn(
-            "absolute inset-0 bg-white/40 origin-left ease-out",
-            // Scale Logic
-            showEnergyBar ? "scale-x-100" : "scale-x-0",
-            // Opacity Logic
-            isFadingOut ? "opacity-0" : "opacity-100",
-
-            // Transition Logic
-            isFadingOut
-              ? "transition-opacity duration-150" // Phase 3: Fade out (opacity only)
-              : showEnergyBar
-                ? cn("transition-transform", isProcessing ? "duration-[500ms]" : "duration-[250ms]") // Phase 1 & 2: Grow/Zip (transform only)
-                : "duration-0" // Phase 4: Reset (instant)
-          )} />
-
-          <div className="relative z-10 flex items-center justify-center gap-2">
-            {showSpinner ? (
-              <>
-                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                {processingStep || 'Processing...'}
-              </>
-            ) : (
-              'Copy & Fill'
-            )}
-          </div>
-        </Button>
-        <Button
-          variant="secondary"
-          className={cn(
-            "w-12 h-12 rounded-xl border border-slate-700/50 transition-all flex items-center justify-center p-0",
-            isProcessing
-              ? "bg-slate-800/60 text-slate-500 cursor-not-allowed"
-              : "bg-slate-800 hover:bg-slate-700 text-slate-200 hover:scale-[1.02] active:scale-[0.98]"
-          )}
-          onClick={() => navigator.clipboard.writeText(generatedAlias)}
-          disabled={isProcessing}
-          title="Copy Only"
-        >
-          <Copy className="w-5 h-5" />
-        </Button>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between text-slate-500 mt-auto pt-2 px-5 pb-3">
-        <button
-          onClick={openSettings}
-          className="p-2 hover:text-white transition-colors rounded-lg hover:bg-slate-900"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
-
-        <div className="flex items-center gap-2 text-xs font-medium text-amber-500/80">
-          {isPro ? (
-            <Crown className="w-3.5 h-3.5 fill-amber-500/20 text-amber-500" />
-          ) : (
-            <Star className="w-3.5 h-3.5 fill-amber-500/20" />
-          )}
-          <button
-            onClick={handleOpenChangelog}
-            disabled={!currentVersionInfo}
-            className={cn(
-              "flex items-center gap-1.5 transition-colors relative",
-              currentVersionInfo ? "hover:text-amber-400 cursor-pointer" : "cursor-default"
-            )}
+      {/* Footer Actions */}
+      <div className="mt-auto px-5 pb-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Button
+            onClick={handleCopyAndFill}
+            disabled={isProcessing}
+            className="flex-1 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all duration-200 relative overflow-hidden group"
           >
-            <span>v{typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : '1.0.0'}</span>
-            {hasNewVersion && (
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-              </span>
+            {showEnergyBar && (
+              <div
+                className={cn(
+                  "absolute inset-0 bg-white/20 origin-left transition-transform ease-linear z-0",
+                  isFadingOut ? "opacity-0 duration-500" : "opacity-100"
+                )}
+                style={{
+                  transitionDuration: isFadingOut ? '500ms' : '500ms',
+                  transform: `scaleX(${isFadingOut ? 1 : (isProcessing ? 0.9 : 0)})`
+                }}
+              />
             )}
+
+            {/* Flash Effect on Complete */}
+            {isFadingOut && (
+              <div className="absolute inset-0 bg-green-500/20 animate-pulse duration-300 z-10" />
+            )}
+
+            <div className="relative z-10 flex items-center justify-center gap-2">
+              {isProcessing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="font-medium">Generating...</span>
+                </>
+              ) : isFadingOut ? (
+                <>
+                  <Check className="w-4 h-4 animate-in zoom-in spin-in-12 duration-300" />
+                  <span className="font-medium">Sent!</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold tracking-wide">Copy & Fill</span>
+                </>
+              )}
+            </div>
+          </Button>
+          <Button
+            variant="secondary"
+            className={cn(
+              "w-12 h-12 rounded-xl border border-slate-700/50 transition-all flex items-center justify-center p-0",
+              isProcessing
+                ? "bg-slate-800/60 text-slate-500 cursor-not-allowed"
+                : "bg-slate-800 hover:bg-slate-700 text-slate-200 hover:scale-[1.02] active:scale-[0.98]"
+            )}
+            onClick={() => navigator.clipboard.writeText(generatedAlias)}
+            disabled={isProcessing}
+            title="Copy Only"
+          >
+            <Copy className="w-5 h-5" />
+          </Button>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between text-slate-500 mt-auto pt-2">
+          <button
+            onClick={openSettings}
+            className="p-2 hover:text-white transition-colors rounded-lg hover:bg-slate-900"
+          >
+            <Settings className="w-5 h-5" />
           </button>
+
+          <div className="flex items-center gap-2 text-xs font-medium text-amber-500/80">
+            {isPro ? (
+              <Crown className="w-3.5 h-3.5 fill-amber-500/20 text-amber-500" />
+            ) : (
+              <Star className="w-3.5 h-3.5 fill-amber-500/20" />
+            )}
+            <button
+              onClick={handleOpenChangelog}
+              disabled={!currentVersionInfo}
+              className={cn(
+                "flex items-center gap-1.5 transition-colors relative",
+                currentVersionInfo ? "hover:text-amber-400 cursor-pointer" : "cursor-default"
+              )}
+            >
+              <span>v{typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : '1.0.0'}</span>
+              {hasNewVersion && (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </div >
   )
 }
 

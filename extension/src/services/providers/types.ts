@@ -4,7 +4,7 @@ export interface AliasProvider {
     verifyToken(token: string, baseUrl?: string): Promise<boolean>;
     getDomains(token: string, baseUrl?: string): Promise<string[]>;
     generateAddress(localPart: string, domain: string): string;
-    createAlias?(alias: string, token: string, domain?: string, hostname?: string, baseUrl?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }>;
+    createAlias?(alias: string, token: string, domain?: string, hostname?: string, baseUrl?: string, format?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }>;
 }
 
 export interface ProviderConfig {
