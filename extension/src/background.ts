@@ -100,7 +100,7 @@ async function handleGenerateAlias(url: string): Promise<string | null> {
         // For SimpleLogin: Always create via API
         if (providerId === 'simplelogin' && provider.createAlias) {
             logger.debug('background', 'SimpleLogin - creating alias via API');
-            const result = await provider.createAlias(alias, config.token);
+            const result = await provider.createAlias(alias, config.token, undefined, undefined, config.baseUrl);
             if (result.success && result.createdAlias) {
                 logger.debug('background', 'SimpleLogin alias created:', result.createdAlias);
                 return result.createdAlias;
@@ -116,6 +116,17 @@ async function handleGenerateAlias(url: string): Promise<string | null> {
         // Icon/context menu use the simple approach
         if (providerId === 'addy') {
             logger.debug('background', 'Addy - returning locally generated alias');
+            // Check if we need to auto-create based on config?
+            // Existing logic says: "Icon/context menu generate invalid aliases that won't work" (lines 139-140) if catch-all disabled
+            // But if we are here, we might be allowed to proceed.
+            // Wait, AddyProvider.createAlias now supports baseUrl.
+            // If the user wants server-side generation via background, we might need to invoke it?
+            // The current logic (line 117) just returns alias.
+            // Let's stick to current behavior but if we DID need to create, we'd pass config.baseUrl.
+
+            // NOTE: Current implementation for Addy background is "offline" generation.
+            // If we want to support server-side generation for Addy in background, we'd need to call createAlias.
+            // But lines 114-119 specificially say "Addy - returning locally generated alias".
             return alias;
         }
 

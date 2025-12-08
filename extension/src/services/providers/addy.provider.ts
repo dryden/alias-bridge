@@ -1,38 +1,39 @@
 import type { AliasProvider } from './types';
-import { verifyToken, getDomains, getDomainDetails, SHARED_DOMAINS } from '../addy';
+import { verifyToken, getDomains, getDomainDetails, normalizeBaseUrl, SHARED_DOMAINS } from '../addy';
 import { logger } from '../logger';
 
 export class AddyProvider implements AliasProvider {
     id = 'addy';
     name = 'Addy.io';
 
-    async verifyToken(token: string): Promise<boolean> {
+    async verifyToken(token: string, baseUrl?: string): Promise<boolean> {
         try {
-            await verifyToken(token);
+            await verifyToken(token, baseUrl);
             return true;
         } catch (e) {
             return false;
         }
     }
 
-    async getDomains(token: string): Promise<string[]> {
-        return getDomains(token);
+    async getDomains(token: string, baseUrl?: string): Promise<string[]> {
+        return getDomains(token, baseUrl);
     }
 
     generateAddress(localPart: string, domain: string): string {
         return `${localPart}@${domain}`;
     }
 
-    async createAlias(alias: string, token: string, domain?: string, hostname?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
+    async createAlias(alias: string, token: string, domain?: string, hostname?: string, baseUrl?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
-            logger.debug('addy.provider', 'Creating alias:', { alias, domain });
+            const apiUrl = normalizeBaseUrl(baseUrl);
+            logger.debug('addy.provider', `Creating alias (API: ${apiUrl}):`, { alias, domain });
 
             // Case 1: Server-side generation (no specific alias provided)
             // This happens when catch-all is disabled and we want Addy to generate the alias
             if ((!alias || alias === '(Generating from server...)') && domain) {
                 logger.debug('addy.provider', 'Requesting server-side generation for domain:', domain);
 
-                const response = await fetch('https://app.addy.io/api/v1/aliases', {
+                const response = await fetch(`${apiUrl}/aliases`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -93,7 +94,7 @@ export class AddyProvider implements AliasProvider {
 
             // For these domain types, check actual catch-all status
             if (isUsernameOrSharedDomain) {
-                const domainDetails = await getDomainDetails(token, aliasDomain);
+                const domainDetails = await getDomainDetails(token, aliasDomain, baseUrl);
                 logger.debug('addy.provider', 'Domain details fetched:', domainDetails);
 
                 if (domainDetails && domainDetails.catch_all === true) {
@@ -108,7 +109,7 @@ export class AddyProvider implements AliasProvider {
             // For custom domains, verify domain exists first
             if (!isUsernameOrSharedDomain) {
                 logger.debug('addy.provider', 'Custom domain detected, verifying domain exists...');
-                const domainDetails = await getDomainDetails(token, aliasDomain);
+                const domainDetails = await getDomainDetails(token, aliasDomain, baseUrl);
                 if (!domainDetails) {
                     logger.error('addy.provider', 'Failed to find domain:', aliasDomain);
                     return {
@@ -122,7 +123,7 @@ export class AddyProvider implements AliasProvider {
 
             // Create alias via Addy API with custom format
             // Using format: "custom" tells Addy to use the exact local_part we specified
-            const response = await fetch('https://app.addy.io/api/v1/aliases', {
+            const response = await fetch(`${apiUrl}/aliases`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

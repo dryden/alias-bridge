@@ -76,15 +76,20 @@ export const providerService = {
         }
     },
 
-    async verifyProviderToken(providerId: string, token: string): Promise<boolean> {
+    async verifyProviderToken(providerId: string, token: string, baseUrl?: string): Promise<boolean> {
         const provider = providerRegistry.get(providerId);
         if (!provider) return false;
-        return provider.verifyToken(token);
+        return provider.verifyToken(token, baseUrl);
     },
 
     async getProviderDomains(providerId: string, token: string): Promise<string[]> {
         const provider = providerRegistry.get(providerId);
         if (!provider) return [];
-        return provider.getDomains(token);
+        // Helper to get fresh settings just for domains fetch might be overkill but ensures we have latest config
+        const settings = await this.getSettings();
+        const config = settings.providers[providerId];
+        const baseUrl = config?.baseUrl;
+
+        return provider.getDomains(token, baseUrl);
     }
 };

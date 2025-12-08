@@ -46,6 +46,8 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
 
     const [config, setConfig] = useState<ProviderConfig | null>(null);
     const [token, setToken] = useState('');
+    const [baseUrl, setBaseUrl] = useState('');
+    const [isSelfHosted, setIsSelfHosted] = useState(false);
     const [showToken, setShowToken] = useState(false);
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [availableDomains, setAvailableDomains] = useState<string[]>([]);
@@ -110,11 +112,18 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
         if (conf) {
             setConfig(conf);
             setToken(conf.token);
+            setBaseUrl(conf.baseUrl || '');
+            setIsSelfHosted(!!conf.baseUrl);
             setStatus('success');
+            // We pass baseUrl here if we had it, but fetchDomains relies on config which isn't updated in state yet?
+            // Actually fetchDomains calls providerService.getProviderDomains which reads from storage
+            // But if we are just loading, storage is up to date.
             fetchDomains(conf.token);
         } else {
             setConfig(null);
             setToken('');
+            setBaseUrl('');
+            setIsSelfHosted(false);
             setStatus('idle');
         }
     };
@@ -144,13 +153,17 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
 
     const handleVerify = async () => {
         setStatus('loading');
-        const isValid = await providerService.verifyProviderToken(providerId, token);
+        // If self-hosted is disabled, clear baseUrl
+        const effectiveBaseUrl = isSelfHosted ? baseUrl : undefined;
+
+        const isValid = await providerService.verifyProviderToken(providerId, token, effectiveBaseUrl);
         if (isValid) {
             setStatus('success');
             const newConfig: ProviderConfig = {
                 id: providerId,
                 enabled: true,
                 token: token,
+                baseUrl: effectiveBaseUrl,
                 defaultDomain: config?.defaultDomain,
                 activeFormat: config?.activeFormat || 'uuid',
                 customRule: config?.customRule || DEFAULT_CUSTOM_RULE,
@@ -170,6 +183,8 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
         await providerService.removeProviderConfig(providerId);
         setConfig(null);
         setToken('');
+        setBaseUrl('');
+        setIsSelfHosted(false);
         setStatus('idle');
         setAvailableDomains([]);
         if (onConfigChange) onConfigChange();
@@ -713,6 +728,40 @@ export function ProviderCard({ providerId, isPro, onConfigChange }: ProviderCard
                                 <a href="https://app.simplelogin.io/dashboard/api_key" target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:text-blue-400 hover:underline inline-block">
                                     Log in to SimpleLogin and create a new API key
                                 </a>
+                            )}
+
+                            {/* Advanced / Self Hosted Option */}
+                            {providerId === 'addy' && (
+                                <div className="pt-2 border-t border-slate-800 mt-2">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Checkbox
+                                            id="self-hosted"
+                                            checked={isSelfHosted}
+                                            onCheckedChange={(c) => setIsSelfHosted(!!c)}
+                                            className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                                        />
+                                        <Label htmlFor="self-hosted" className="text-xs text-slate-300 cursor-pointer">
+                                            Self-hosted Instance
+                                        </Label>
+                                    </div>
+
+                                    {isSelfHosted && (
+                                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <Label htmlFor="base-url" className="text-slate-300 text-xs">Base URL</Label>
+                                            <Input
+                                                id="base-url"
+                                                type="text"
+                                                value={baseUrl}
+                                                onChange={(e) => setBaseUrl(e.target.value)}
+                                                placeholder="https://app.addy.io"
+                                                className="bg-slate-950 border-slate-800 text-slate-100 placeholder:text-slate-600 text-xs h-8"
+                                            />
+                                            <p className="text-[10px] text-slate-500">
+                                                Enter the root URL of your instance (e.g. https://my-addy.com).
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </div>
                         <Button

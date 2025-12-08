@@ -7,7 +7,7 @@ export class SimpleLoginProvider implements AliasProvider {
     id = 'simplelogin';
     name = 'SimpleLogin';
 
-    async verifyToken(token: string): Promise<boolean> {
+    async verifyToken(token: string, _baseUrl?: string): Promise<boolean> {
         try {
             const response = await fetch(`${BASE_URL}/user_info`, {
                 headers: {
@@ -20,7 +20,7 @@ export class SimpleLoginProvider implements AliasProvider {
         }
     }
 
-    async getDomains(token: string): Promise<string[]> {
+    async getDomains(token: string, _baseUrl?: string): Promise<string[]> {
         const headers = {
             'Authentication': token,
             'Content-Type': 'application/json'
@@ -93,7 +93,7 @@ export class SimpleLoginProvider implements AliasProvider {
     }
 
 
-    async createAlias(alias: string, token: string, _domain?: string, hostname?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
+    async createAlias(alias: string, token: string, _domain?: string, hostname?: string, _baseUrl?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }> {
         try {
             logger.debug('simplelogin.provider', 'Creating alias on server:', alias);
 

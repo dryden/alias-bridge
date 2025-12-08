@@ -55,14 +55,14 @@ function App() {
           // First, try to use cachedDomains from providerConfig if available
           let domains = providerConfig.cachedDomains && providerConfig.cachedDomains.length > 0
             ? providerConfig.cachedDomains
-            : await domainCacheService.getCachedDomains(providerConfig.id, providerConfig.token)
+            : await domainCacheService.getCachedDomains(providerConfig.id, providerConfig.token, providerConfig.baseUrl)
 
           if (!domains) {
             // Cache miss, fetch from provider
             logger.debug('App', 'Domain cache miss, fetching from provider')
             domains = await providerService.getProviderDomains(providerConfig.id, providerConfig.token)
             // Cache the result
-            await domainCacheService.setCachedDomains(providerConfig.id, providerConfig.token, domains)
+            await domainCacheService.setCachedDomains(providerConfig.id, providerConfig.token, domains, providerConfig.baseUrl)
           } else {
             logger.debug('App', 'Domain cache hit, using cached domains')
           }
@@ -98,13 +98,13 @@ function App() {
     setIsRefreshingDomains(true)
     try {
       // Invalidate domain and catch-all cache
-      await domainCacheService.invalidateCache(providerConfig.id, providerConfig.token)
+      await domainCacheService.invalidateCache(providerConfig.id, providerConfig.token, providerConfig.baseUrl)
 
       // Fetch fresh domains from provider
       const domains = await providerService.getProviderDomains(providerConfig.id, providerConfig.token)
 
       // Cache the result
-      await domainCacheService.setCachedDomains(providerConfig.id, providerConfig.token, domains)
+      await domainCacheService.setCachedDomains(providerConfig.id, providerConfig.token, domains, providerConfig.baseUrl)
 
       setAvailableDomains(domains)
 
@@ -141,19 +141,19 @@ function App() {
     if (providerConfig.id === 'addy') {
       try {
         // Try to get catch-all status from cache first
-        let isCatchAllEnabledValue = await domainCacheService.getCachedCatchAllStatus(providerConfig.id, providerConfig.token, defaultDomain)
+        let isCatchAllEnabledValue = await domainCacheService.getCachedCatchAllStatus(providerConfig.id, providerConfig.token, defaultDomain, providerConfig.baseUrl)
 
         if (isCatchAllEnabledValue === null) {
           // Cache miss, fetch from provider
           logger.debug('App', 'Catch-all status cache miss, fetching from provider')
           const { getDomainDetails } = await import('./services/addy')
-          const domainDetails = await getDomainDetails(providerConfig.token, defaultDomain)
+          const domainDetails = await getDomainDetails(providerConfig.token, defaultDomain, providerConfig.baseUrl)
           logger.debug('App', 'generateAlias - Domain details retrieved:', { domain: defaultDomain, details: domainDetails })
 
           if (domainDetails) {
             isCatchAllEnabledValue = domainDetails.catch_all === true
             // Cache the catch-all status
-            await domainCacheService.setCachedCatchAllStatus(providerConfig.id, providerConfig.token, defaultDomain, isCatchAllEnabledValue)
+            await domainCacheService.setCachedCatchAllStatus(providerConfig.id, providerConfig.token, defaultDomain, isCatchAllEnabledValue, providerConfig.baseUrl)
             logger.debug('App', 'Cached catch-all status:', { domain: defaultDomain, isCatchAllEnabled: isCatchAllEnabledValue })
           } else {
             logger.debug('App', 'Domain details not found, generating alias normally')
@@ -256,7 +256,7 @@ function App() {
             const domainForCreation = (providerConfig.id === 'addy' && isCatchAllEnabled === false) ? defaultDomain : undefined;
             const hostname = getRegistrableDomainFromUrl(currentUrl);
 
-            const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation, hostname);
+            const result = await provider.createAlias(aliasToCreate, providerConfig.token, domainForCreation, hostname, providerConfig.baseUrl);
             if (result.success) {
               logger.debug('App', '  ✓ Alias successfully created on server');
               // Use server-returned alias if available

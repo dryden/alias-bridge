@@ -1,6 +1,7 @@
 import { logger } from './logger'
 
-const BASE_URL = 'https://app.addy.io/api/v1';
+// Default API URL for cloud hosted instance
+const DEFAULT_API_URL = 'https://app.addy.io/api/v1';
 
 export interface AddyAccountDetails {
     id: string;
@@ -17,8 +18,36 @@ export interface AddyDomainDetails {
     [key: string]: any;
 }
 
-export const verifyToken = async (token: string): Promise<AddyAccountDetails> => {
-    const response = await fetch(`${BASE_URL}/account-details`, {
+/**
+ * Normalizes the base URL to ensure it ends with /api/v1
+ * If the user provides the root domain (e.g. https://my-instance.com), it appends /api/v1
+ */
+export const normalizeBaseUrl = (url?: string): string => {
+    if (!url || !url.trim()) return DEFAULT_API_URL;
+
+    let cleaned = url.trim();
+    // Remove trailing slash
+    if (cleaned.endsWith('/')) {
+        cleaned = cleaned.slice(0, -1);
+    }
+
+    // If it already ends with /api/v1, return it
+    if (cleaned.endsWith('/api/v1')) {
+        return cleaned;
+    }
+
+    // If it ends with /api, append /v1
+    if (cleaned.endsWith('/api')) {
+        return `${cleaned}/v1`;
+    }
+
+    // Otherwise append /api/v1
+    return `${cleaned}/api/v1`;
+};
+
+export const verifyToken = async (token: string, baseUrl?: string): Promise<AddyAccountDetails> => {
+    const apiUrl = normalizeBaseUrl(baseUrl);
+    const response = await fetch(`${apiUrl}/account-details`, {
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -43,9 +72,10 @@ export const SHARED_DOMAINS = [
     'addy.io'
 ];
 
-export const getDomainDetails = async (token: string, domain: string): Promise<AddyDomainDetails | null> => {
+export const getDomainDetails = async (token: string, domain: string, baseUrl?: string): Promise<AddyDomainDetails | null> => {
     try {
-        logger.debug('Addy', 'getDomainDetails - Fetching details for:', domain);
+        const apiUrl = normalizeBaseUrl(baseUrl);
+        logger.debug('Addy', `getDomainDetails - Fetching details for: ${domain} (API: ${apiUrl})`);
 
         const headers = {
             'Authorization': `Bearer ${token}`,
@@ -54,7 +84,7 @@ export const getDomainDetails = async (token: string, domain: string): Promise<A
         };
 
         // First, try to fetch custom domains
-        const domainsResponse = await fetch(`${BASE_URL}/domains`, { headers });
+        const domainsResponse = await fetch(`${apiUrl}/domains`, { headers });
         if (domainsResponse.ok) {
             const domainsData = await domainsResponse.json();
             logger.debug('Addy', 'Custom domains fetched:', domainsData.data?.map((d: any) => ({ domain: d.domain, catch_all: d.catch_all })));
@@ -87,7 +117,7 @@ export const getDomainDetails = async (token: string, domain: string): Promise<A
                 logger.debug('Addy', 'Detected username.shared domain format:', { username: potentialUsername, shared: potentialSharedDomain });
 
                 // Fetch usernames to get catch_all status
-                const usernamesResponse = await fetch(`${BASE_URL}/usernames`, { headers });
+                const usernamesResponse = await fetch(`${apiUrl}/usernames`, { headers });
                 if (usernamesResponse.ok) {
                     const usernamesData = await usernamesResponse.json();
                     logger.debug('Addy', 'Usernames fetched:', usernamesData.data?.map((u: any) => ({ username: u.username, catch_all: u.catch_all })));
@@ -134,8 +164,9 @@ export const getDomainDetails = async (token: string, domain: string): Promise<A
     }
 };
 
-export const getDomains = async (token: string): Promise<string[]> => {
+export const getDomains = async (token: string, baseUrl?: string): Promise<string[]> => {
     try {
+        const apiUrl = normalizeBaseUrl(baseUrl);
         const headers = {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -143,19 +174,19 @@ export const getDomains = async (token: string): Promise<string[]> => {
         };
 
         // 1. Fetch Account Details (for main username)
-        const accountRes = await fetch(`${BASE_URL}/account-details`, { headers });
+        const accountRes = await fetch(`${apiUrl}/account-details`, { headers });
         const accountData = await accountRes.json();
         const mainUsername = accountData.data?.username;
 
         // 2. Fetch Additional Usernames
-        const usernamesRes = await fetch(`${BASE_URL}/usernames`, { headers });
+        const usernamesRes = await fetch(`${apiUrl}/usernames`, { headers });
         const usernamesData = usernamesRes.ok ? await usernamesRes.json() : { data: [] };
         const additionalUsernames = usernamesData.data?.map((u: any) => u.username) || [];
 
         const allUsernames = [mainUsername, ...additionalUsernames].filter(Boolean);
 
         // 3. Fetch Custom Domains
-        const domainsRes = await fetch(`${BASE_URL}/domains`, { headers });
+        const domainsRes = await fetch(`${apiUrl}/domains`, { headers });
         const domainsData = domainsRes.ok ? await domainsRes.json() : { data: [] };
         const customDomains = domainsData.data?.map((d: any) => d.domain) || [];
 
@@ -184,8 +215,9 @@ export const getDomains = async (token: string): Promise<string[]> => {
     }
 };
 
-export const getDomainId = async (token: string, domainName: string): Promise<number | null> => {
+export const getDomainId = async (token: string, domainName: string, baseUrl?: string): Promise<number | null> => {
     try {
+        const apiUrl = normalizeBaseUrl(baseUrl);
         const headers = {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -195,7 +227,7 @@ export const getDomainId = async (token: string, domainName: string): Promise<nu
         logger.debug('Addy', 'getDomainId - Looking up ID for domain:', domainName);
 
         // Fetch custom domains to get the domain ID
-        const domainsRes = await fetch(`${BASE_URL}/domains`, { headers });
+        const domainsRes = await fetch(`${apiUrl}/domains`, { headers });
         if (domainsRes.ok) {
             const domainsData = await domainsRes.json();
             logger.debug('Addy', 'getDomainId - All domains fetched:', domainsData.data?.map((d: any) => ({ id: d.id, domain: d.domain })));
