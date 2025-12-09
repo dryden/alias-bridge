@@ -21,6 +21,7 @@ export const CHANGELOGS: ChangelogEntry[] = [
         changes: [
             "Expanded domain parsing support for APAC regions(e.g., .hk, .sg, .kr, .cn) and common platforms(e.g., github.io, vercel.app)."
         ]
+
     },
     {
         version: "2.2.0",
