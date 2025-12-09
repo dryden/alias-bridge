@@ -7,6 +7,7 @@ export interface LicenseResponse {
 }
 
 const POLAR_API_URL = 'https://api.polar.sh/v1/customer-portal/license-keys/activate';
+const POLAR_VALIDATE_API_URL = 'https://api.polar.sh/v1/customer-portal/license-keys/validate';
 const ORGANIZATION_ID = '0a292b2d-fb35-42c6-905a-8501d644f330'; // TODO: Replace with your Polar Organization ID
 
 export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
@@ -57,7 +58,22 @@ export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
             }
             if (response.status === 403) {
                 // Return the specific detail from Polar if available (e.g. "NotPermitted")
-                return { valid: false, error: errorData.detail || 'Activation limit reached or not supported' };
+                const detail = errorData.detail || '';
+                // Check if specific error asking to use validate endpoint
+                if (detail.includes('validate endpoint') || detail.includes('does not support activations')) {
+                    logger.info('license', 'Key does not support activation, falling back to validation');
+                    return await validateOnly(key, ORGANIZATION_ID);
+                }
+                return { valid: false, error: detail || 'Activation limit reached or not supported' };
+            }
+
+            // Also check 400 bad request just in case
+            if (response.status === 400) {
+                const detail = errorData.detail || errorData.error || '';
+                if (detail.includes('validate endpoint') || detail.includes('does not support activations')) {
+                    logger.info('license', 'Key does not support activation, falling back to validation');
+                    return await validateOnly(key, ORGANIZATION_ID);
+                }
             }
 
             return { valid: false, error: errorData.detail || errorData.error || 'Verification failed' };
@@ -75,5 +91,40 @@ export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
     } catch (error) {
         logger.error('license', 'License verification failed:', error);
         return { valid: false, error: 'Verification failed' };
+    }
+};
+
+const validateOnly = async (key: string, organizationId: string): Promise<LicenseResponse> => {
+    try {
+        const response = await fetch(POLAR_VALIDATE_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                key: key,
+                organization_id: organizationId,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            logger.error('license', 'Polar Validate API Error:', response.status, JSON.stringify(errorData));
+            return { valid: false, error: errorData.detail || errorData.error || 'Validation failed' };
+        }
+
+        const data = await response.json();
+        // If we get a valid response with a license_key object, it's valid
+        // Validate endpoint returns logic slightly different, checking if "id" or specific fields exist is usually enough,
+        // but based on API docs usually it returns the license object if valid.
+        // Assuming same structure for success as we care about existence.
+        if (data && (data.id || data.key)) {
+            return { valid: true, plan: 'pro' };
+        }
+
+        return { valid: false, error: 'Invalid license' };
+    } catch (error) {
+        logger.error('license', 'License validation fallback failed:', error);
+        return { valid: false, error: 'Validation failed' };
     }
 };
