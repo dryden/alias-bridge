@@ -558,7 +558,7 @@ function App() {
             {!isPro && (
               <div className="p-4 bg-gradient-to-t from-blue-900/20 to-transparent border-t border-slate-800">
                 <button
-                  onClick={() => window.open('https://buy.polar.sh/polar_cl_PFI9AO6jGDqXB5ZvrRtnQBJ7nqccnijY9Y3Kv07QS6E', '_blank')}
+                  onClick={() => window.open('https://buy.polar.sh/polar_cl_Rmxq5UDVfgkNoQVZ26J4lsy1sOV8WXt72wHMA2VVg9k', '_blank')}
                   className="w-full group text-center space-y-1"
                 >
                   <p className="text-xs text-slate-400 group-hover:text-amber-400 transition-colors">

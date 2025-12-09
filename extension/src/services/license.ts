@@ -7,7 +7,7 @@ export interface LicenseResponse {
 }
 
 const POLAR_API_URL = 'https://api.polar.sh/v1/customer-portal/license-keys/activate';
-const ORGANIZATION_ID = '5a0be606-78d9-4119-a7c7-1c8bc12b07ea'; // TODO: Replace with your Polar Organization ID
+const ORGANIZATION_ID = '0a292b2d-fb35-42c6-905a-8501d644f330'; // TODO: Replace with your Polar Organization ID
 
 export const verifyLicense = async (key: string): Promise<LicenseResponse> => {
 
