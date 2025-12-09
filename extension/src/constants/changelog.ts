@@ -1,14 +1,27 @@
 export interface ChangelogEntry {
     version: string;
-    content: string[];
+    date?: string; // Added date as optional
+    content?: string[]; // Made content optional
+    changes?: string[]; // Added changes as optional
 }
 
 export const CHANGELOGS: ChangelogEntry[] = [
     {
-        version: "2.2.1",
-        content: [
-            "Expanded domain parsing support for APAC regions (e.g., .hk, .sg, .kr, .cn) and common platforms (e.g., github.io, vercel.app)."
+        version: "3.0.1",
+        date: "2025-12-09",
+        changes: [
+            "Full support for Self-Hosted Addy.io instances with dynamic configuration.",
+            "Refined User Interface: Enhanced 'Server Generation Mode' with clear instructions and polished visuals.",
+            "Stability: Fixed edge cases for shared domains and improved build reliability.",
         ]
+    },
+    {
+        version: "2.2.1",
+        date: "2025-12-08",
+        changes: [
+            "Expanded domain parsing support for APAC regions(e.g., .hk, .sg, .kr, .cn) and common platforms(e.g., github.io, vercel.app)."
+        ]
+
     },
     {
         version: "2.2.0",

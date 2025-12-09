@@ -23,19 +23,21 @@ export async function checkAndUpdateCatchAllStatus(
   logger.debug('catchAllHelper', 'Token available:', !!token)
 
   let isCatchAllEnabledValue: boolean | null = null
+  const baseUrl = currentConfig.baseUrl
 
   try {
     // Try to get from cache first
     isCatchAllEnabledValue = await domainCacheService.getCachedCatchAllStatus(
       providerId,
       token,
-      domain
+      domain,
+      baseUrl
     )
 
     if (isCatchAllEnabledValue === null) {
       // Cache miss, fetch from API
       logger.debug('catchAllHelper', 'Cache miss, fetching from API')
-      const details = await getDomainDetails(token, domain)
+      const details = await getDomainDetails(token, domain, baseUrl)
       logger.debug('catchAllHelper', 'getDomainDetails returned:', details)
 
       if (details) {
@@ -45,7 +47,8 @@ export async function checkAndUpdateCatchAllStatus(
           providerId,
           token,
           domain,
-          isCatchAllEnabledValue
+          isCatchAllEnabledValue,
+          baseUrl
         )
         logger.debug('catchAllHelper', 'Cached catch-all status:', {
           domain,

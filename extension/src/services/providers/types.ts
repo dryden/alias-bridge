@@ -1,16 +1,17 @@
 export interface AliasProvider {
     id: string;
     name: string;
-    verifyToken(token: string): Promise<boolean>;
-    getDomains(token: string): Promise<string[]>;
+    verifyToken(token: string, baseUrl?: string): Promise<boolean>;
+    getDomains(token: string, baseUrl?: string): Promise<string[]>;
     generateAddress(localPart: string, domain: string): string;
-    createAlias?(alias: string, token: string, domain?: string, hostname?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }>;
+    createAlias?(alias: string, token: string, domain?: string, hostname?: string, baseUrl?: string, format?: string): Promise<{ success: boolean; error?: string; isCatchAllDomain?: boolean; createdAlias?: string }>;
 }
 
 export interface ProviderConfig {
     id: string;
     enabled: boolean;
     token: string;
+    baseUrl?: string;
     defaultDomain?: string;
     activeFormat?: string; // 'uuid', 'random', 'domain', 'custom'
     customRule?: CustomRule;

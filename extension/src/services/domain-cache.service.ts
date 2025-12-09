@@ -18,9 +18,9 @@ export const domainCacheService = {
   /**
    * Get cached domains for a provider if still valid
    */
-  async getCachedDomains(providerId: string, token: string): Promise<string[] | null> {
+  async getCachedDomains(providerId: string, token: string, baseUrl?: string): Promise<string[] | null> {
     const cache = await this.getCache()
-    const cacheKey = this.getCacheKey(providerId, token)
+    const cacheKey = this.getCacheKey(providerId, token, baseUrl)
     const entry = cache[cacheKey]
 
     if (!entry) return null
@@ -41,9 +41,9 @@ export const domainCacheService = {
   /**
    * Set cached domains for a provider
    */
-  async setCachedDomains(providerId: string, token: string, domains: string[]): Promise<void> {
+  async setCachedDomains(providerId: string, token: string, domains: string[], baseUrl?: string): Promise<void> {
     const cache = await this.getCache()
-    const cacheKey = this.getCacheKey(providerId, token)
+    const cacheKey = this.getCacheKey(providerId, token, baseUrl)
 
     // Preserve existing catch-all status if present
     const existingEntry = cache[cacheKey]
@@ -61,9 +61,9 @@ export const domainCacheService = {
   /**
    * Get cached catch-all status for a domain if still valid
    */
-  async getCachedCatchAllStatus(providerId: string, token: string, domain: string): Promise<boolean | null> {
+  async getCachedCatchAllStatus(providerId: string, token: string, domain: string, baseUrl?: string): Promise<boolean | null> {
     const cache = await this.getCache()
-    const cacheKey = this.getCacheKey(providerId, token)
+    const cacheKey = this.getCacheKey(providerId, token, baseUrl)
     const entry = cache[cacheKey]
 
     if (!entry) return null
@@ -81,9 +81,9 @@ export const domainCacheService = {
   /**
    * Set cached catch-all status for a domain
    */
-  async setCachedCatchAllStatus(providerId: string, token: string, domain: string, isCatchAllEnabled: boolean): Promise<void> {
+  async setCachedCatchAllStatus(providerId: string, token: string, domain: string, isCatchAllEnabled: boolean, baseUrl?: string): Promise<void> {
     const cache = await this.getCache()
-    const cacheKey = this.getCacheKey(providerId, token)
+    const cacheKey = this.getCacheKey(providerId, token, baseUrl)
 
     if (!cache[cacheKey]) {
       cache[cacheKey] = {
@@ -101,9 +101,9 @@ export const domainCacheService = {
   /**
    * Invalidate cache for a provider
    */
-  async invalidateCache(providerId: string, token: string): Promise<void> {
+  async invalidateCache(providerId: string, token: string, baseUrl?: string): Promise<void> {
     const cache = await this.getCache()
-    const cacheKey = this.getCacheKey(providerId, token)
+    const cacheKey = this.getCacheKey(providerId, token, baseUrl)
 
     delete cache[cacheKey]
     await this.saveCache(cache)
@@ -118,9 +118,13 @@ export const domainCacheService = {
 
   /**
    * Generate unique cache key from provider id and token
+   * Now includes baseUrl to separate self-hosted from cloud instances
    */
-  getCacheKey(providerId: string, token: string): string {
-    return `${providerId}:${token.substring(0, 8)}`
+  getCacheKey(providerId: string, token: string, baseUrl?: string): string {
+    // Basic hash to avoid storing full URL in key if it's long, but simple enough to be readable
+    // If baseUrl is provided, use a clean version of it, otherwise 'default'
+    const urlKey = baseUrl ? baseUrl.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20) : 'default';
+    return `${providerId}:${token.substring(0, 8)}:${urlKey}`
   },
 
   /**
@@ -151,3 +155,4 @@ export const domainCacheService = {
     })
   }
 }
+

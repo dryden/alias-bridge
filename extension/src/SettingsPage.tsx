@@ -219,7 +219,7 @@ function SettingsPage() {
                                 <div className="space-y-3 pt-2">
                                     <Button
                                         className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold"
-                                        onClick={() => window.open('https://buy.polar.sh/polar_cl_PFI9AO6jGDqXB5ZvrRtnQBJ7nqccnijY9Y3Kv07QS6E', '_blank')}
+                                        onClick={() => window.open('https://buy.polar.sh/polar_cl_Rmxq5UDVfgkNoQVZ26J4lsy1sOV8WXt72wHMA2VVg9k', '_blank')}
                                     >
                                         Get Pro License
                                     </Button>
