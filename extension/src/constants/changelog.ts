@@ -7,8 +7,8 @@ export interface ChangelogEntry {
 
 export const CHANGELOGS: ChangelogEntry[] = [
     {
-        version: "3.0.0",
-        date: "2025-12-08",
+        version: "3.0.1",
+        date: "2025-12-09",
         changes: [
             "Full support for Self-Hosted Addy.io instances with dynamic configuration.",
             "Refined User Interface: Enhanced 'Server Generation Mode' with clear instructions and polished visuals.",
